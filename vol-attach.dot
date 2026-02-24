@@ -1,0 +1,37 @@
+digraph {
+    graph [bgcolor="black"];
+    edge [color="white", fontcolor="white"];
+    node[style="filled", shape="box"];
+
+    attach [label="vol attach", shape="none"];
+    wipe [label="wipe?"];
+    attach -> wipe;
+    wipe -> yes_wipe [label="true"];
+    wipe -> find_volumes_and_snapshots_w_tags [label="false"];
+    yes_wipe [label="delete any volume w/ the specified tags/az"];
+    yes_wipe -> find_volumes_and_snapshots_w_tags;
+    find_volumes_and_snapshots_w_tags [label="find any volume/snapshot w/ the specified tags/az"];
+    find_volumes_and_snapshots_w_tags -> attach_volume [label="volume is newer"];
+    find_volumes_and_snapshots_w_tags -> delete_volume [label="snapshot is newer"];
+    find_volumes_and_snapshots_w_tags -> snapshot_w_snapshot_tags_exists [label="neither exists"];
+    delete_volume [label="delete any volume w/ the specified tags/az"];
+    delete_volume -> create_volume_from_snapshot_w_tags;
+    create_volume_from_snapshot_w_tags [label="create a volume w/ the specified tags/az from the snapshot\nw/ the specified tags"];
+    create_volume_from_snapshot_w_tags -> attach_volume;
+    snapshot_w_snapshot_tags_exists [label="a snapshot w/ the specified snapshot tags exists\n(notice: snapshot tags, not tags)\n(tags are mandatory, snapshot tags are not)"];
+    snapshot_w_snapshot_tags_exists -> create_volume_from_snapshot_w_snapshot_tags [label="true"];
+    create_empty_volume [label="create an empty volume w/ the specified tags/az/size"];
+    snapshot_w_snapshot_tags_exists -> create_empty_volume [label="false"];
+    create_empty_volume -> attach_volume;
+    create_volume_from_snapshot_w_snapshot_tags [label="create a volume witth the specified tags/az from the snapshot\nwith the specified snapshot tags"];
+    create_volume_from_snapshot_w_snapshot_tags -> attach_volume;
+    attach_volume [label="attach volume"];
+    mount [label="mount?"];
+    attach_volume -> mount;
+    mount -> formatted [label="true"];
+    formatted [label="is formatted?"];
+    yes_mount [label="mount"];
+    formatted -> yes_mount [label="true"];
+    formatted -> format [label="false"];
+    format -> yes_mount;
+}

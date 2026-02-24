@@ -1,0 +1,715 @@
+#!/usr/bin/env python3
+# Requires: python+boto3; for (u)mount/format: sudo+util-linux
+
+import argparse
+import json
+import random
+import re
+import sys
+
+if sys.version_info < (3, 11):
+    from datetime import timezone
+    UTC = timezone.utc
+else:
+    from datetime import UTC
+
+from boto3 import client
+from datetime import date, datetime, MINYEAR
+from dateutil.parser import isoparse
+from hashlib import sha256
+from operator import itemgetter
+from os import getgid, getuid, makedirs
+from os.path import exists, realpath
+from subprocess import CalledProcessError, run
+from textwrap import dedent
+from time import sleep
+from urllib.request import Request, urlopen
+
+PROG = 'vol'
+IMPLICIT_TAGS = {f'{PROG}.namespace': 'default'}
+
+def get_args():
+    class HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter): pass
+
+    parser = argparse.ArgumentParser(prog=PROG, formatter_class=HelpFormatter, description=dedent(f'''
+        Tag-based EBS volume management
+
+        The script can be invoked on the node, or off (except (u)mount/format)
+
+        Reserved tags starting with `{PROG}.' are added to volumes and
+        snapshots, used in queries and are filtered out before display
+
+        The script enforces the requirement that a search by tags must return
+        at most one result for snapshots and per-availability-zone for volumes
+        (except clean/list)
+    '''))
+
+    tag_type = lambda s: s if s == '*' else dict(map(lambda p: p.split('='), s.split(',')))
+
+    options = (
+        (
+            'list',
+            'list',
+            '''
+                * list volumes matching the specified tags (and optionally availability zone)
+                * list snapshots matching the specified snapshot tags
+
+                E.g.:
+
+                %(prog)s --tags type=bb.pr.workspace,pr=123
+
+                %(prog)s --tags '*' --snapshot-tags '*'
+            ''',
+            (
+                (['-t', '--tags'], {'type': tag_type, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-T', '--snapshot-tags'], {'type': tag_type, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
+                (['-z', '--availability-zone'], {'help': 'availability zone for volumes, any if not set'}),
+            ),
+        ),
+        (
+            'attach',
+            'delete/create/attach/mount',
+            '''
+                * if wipe is specified, delete the volume with the specified tags in the specified availability zone
+                * find any volume with the specified tags and availability zone and any snapshots with the specified tags
+                  * if the volume is newer
+                    * attach it
+                  * if the snapshot with the specified tags is newer (1)
+                    * delete any existing volume with the specified tags and availability zone
+                    * create a volume with the specified tags and availability zone from that snapshot
+                    * attach it
+                  * if neither exists
+                    * if a snapshot with the specified snapshot tags exists
+                      * create a volume with the specified tags and availability zone from that snapshot
+                      * attach it
+                    * otherwise
+                      * create an empty volume with the specified size, tags and availability zone
+                      * attach it
+                * optionally mount, if running on the instance
+                  * if the volume is not formatted, format it
+
+                (1) if you want to attach cross-az, create snapshots, or you'll keep starting with an empty volume
+
+                E.g.:
+
+                %(prog)s \\
+                    --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \\
+                    --snapshot-tags type=bb.public.workspace,branch=master,platform=linux,arch=x64 \\
+                    --size 256 \\
+                    --mountpoint /home/ubuntu/workspace
+            ''',
+            (
+                (['-f', '--fstype'], {'default': 'ext4', 'help': 'fs type to use with --mountpoint if the volume is not formatted'}),
+                (['-i', '--instance-id'], {'help': 'instance id, current instance by default'}),
+                (['-k', '--kms-key-id'], {'help': 'KMS key to use for volume encryption, otherwise default'}),
+                (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux, create if doesn\'t exist'}),
+                (['-n', '--no-snapshots'], {'type': bool, 'default': False, 'help': 'do not use snapshots to create volumes'}),
+                (['-r', '--volume-initialization-rate'], {'type': int, 'default': None, 'help': 'volume initialization rate in MiB/s'}),
+                (['-s', '--size'], {'type': int, 'required': True, 'help': 'volume size in GB, if it needs to be created'}),
+                (['-t', '--tags'], {'type': tag_type, 'required': True, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-T', '--snapshot-tags'], {'type': tag_type, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
+                (['-w', '--wipe'], {'type': bool, 'default': False, 'help': 'delete the matching volume first'}),
+                (['-z', '--availability-zone'], {'help': 'availability zone, derived from instance-id if not set'}),
+            ),
+        ),
+        (
+            'detach',
+            'umount/detach/delete',
+            '''
+                * optionally umount, if running on the instance
+                * detach the volume
+                * if wipe is specified, delete the volume
+
+                E.g.:
+
+                %(prog)s \\
+                    --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \\
+                    --mountpoint /home/ubuntu/workspace
+            ''',
+            (
+                (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
+                (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux'}),
+                (['-t', '--tags'], {'type': tag_type, 'default': [], 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-w', '--wipe'], {'type': bool, 'default': False, 'help': 'delete the matching volume'}),
+                (['-z', '--availability-zone'], {'help': 'availability zone, required, derived from instance-id if not set'}),
+            ),
+        ),
+        (
+            'snapshot',
+            'create/overwrite',
+            '''
+                * create a snapshot of a volume
+                * if the snapshot with the specified tags exists, overwrite, unless --no-clobber is used
+
+                E.g.:
+
+                %(prog)s \\
+                    --tags          type=bb.public.workspace,branch=master,platform=linux,arch=x64 \\
+                    --snapshot-tags type=bb.public.workspace,branch=master,platform=linux,arch=x64
+            ''',
+            (
+                (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
+                (['-n', '--no-clobber'], {'type': bool, 'default': False, 'help': 'do not overwrite existing snapshots'}),
+                (['-t', '--tags'], {'type': tag_type, 'default': [], 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-T', '--snapshot-tags'], {'type': tag_type, 'required': True, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
+                (['-z', '--availability-zone'], {'help': 'availability zone, required, derived from instance-id if not set'}),
+            ),
+        ),
+        (
+            'clean',
+            'delete',
+            '''
+                * delete volumes matching the specified tags (and optionally availability zone)
+                * delete snapshots matching the specified snapshot tags
+
+                E.g.:
+
+                %(prog)s --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64
+            ''',
+            (
+                (['-i', '--interactive'], {'type': bool, 'default': False, 'help': 'interactively ask for input'}),
+                (['-t', '--tags'], {'type': tag_type, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-T', '--snapshot-tags'], {'type': tag_type, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
+                (['-z', '--availability-zone'], {'help': 'availability zone for volumes, any if not set'}),
+            ),
+        ),
+    )
+
+    subparsers = parser.add_subparsers(title='action', dest='action', required=True, description='%(prog)s <action> -h for more help')
+
+    for action, help, description, opts in options:
+        action_description = dedent(description)
+        action_parser = subparsers.add_parser(action, description=action_description, help=help, formatter_class=HelpFormatter)
+        for ar, kwar in opts:
+            action_parser.add_argument(*ar, **kwar)
+
+    # TODO: enable reading options from a config file, including restrictions on valid tag keys/values
+
+    return parser.parse_args()
+
+############################## LOW-LEVEL HELPERS ##############################
+
+toList = list
+
+# TODO: enable choosing max verbosity on the command line
+def msg(msg, log_level = 'info'):
+    say = lambda m: print(m, file=sys.stderr)
+
+    match log_level:
+        case 'error':
+            say(f'Error: {msg}')
+            sys.exit(2)
+        case 'info':
+            say(msg)
+        case 'debug':
+            say(f'DEBUG: {msg}')
+        case _:
+            raise ValueError('Valid severities: error, info, debug')
+
+def dbg(m):
+    return msg(m, 'debug')
+
+def err(template = None, text = None):
+    if template:
+        return msg({
+            'ABORTED': 'Aborting on user request',
+            'ATTACH_REQUIRES_REAL_TAGS': 'The attach action may create volumes, so it requires non-wildcard tags',
+            'AZ_DOES_NOT_MATCH_INSTANCE': 'The specified availability zone does not match the instance',
+            'MOUNTPOINT_WO_FSTYPE': 'If a mountpoint is specified, the filesystem type also needs to be specified',
+            'NO_AVAILABLE_DEVICES': 'All available device names are in use on the target instance',
+            'NO_ROOT': 'Please don\'t run this script as root, it will call sudo if necessary ((u)mount/format)',
+            'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
+            'NO_VOLUMES': 'No volumes found with the specified tags',
+            'RESERVED_TAG': f'Tags starting with {PROG}. are reserved for internal use',
+            'SNAPSHOT_ALREADY_EXISTS': 'A snapshot with tags the specified tags already exists',
+            'SNAPSHOT_REQUIRES_REAL_TAGS': 'The snapshot action creates snapshots, so it requires non-wildcard snapshot tags',
+            'TIMEOUT_PENDING_INSTANCE': 'Timed out waiting for a pending instance to become available',
+            'TOO_MANY_VOLUMES': 'The number of volumes with the specified tags exceeds 1',
+            'TOO_MANY_SNAPSHOTS_W_SNAPSHOT_TAGS': 'The number of snapshots with the specified tags exceeds 1',
+            'TOO_MANY_SNAPSHOTS_W_VOLUME_TAGS': 'The number of snapshots with the specified tags exceeds 1',
+            'VOLUME_EXISTS': 'A volume with the specified tags already exists',
+            'b0rk': 'An impossible b0rkage has occurred',
+        }[template], log_level = 'error')
+    elif text:
+        return msg(text, log_level = 'error')
+    else:
+        raise ValueError('Can\'t call this with empty arguments')
+
+def get_tag_filters(tags):
+    '''Dictionary to list of Name/Values dictionaries'''
+
+    all_tags = IMPLICIT_TAGS | (tags if tags != '*' else {})
+    return [{'Name': f'tag:{k}', 'Values': [v]} for k, v in all_tags.items()]
+
+def get_tag_spec(tags):
+    '''Dictionary to a list of Key/Value dictionaries'''
+
+    all_tags = IMPLICIT_TAGS | (tags if tags != '*' else {})
+    return [{'Key': k, 'Value': v} for k, v in all_tags.items()]
+
+def get_tag_string(tags):
+    '''Wildcard, or dictionary, or list of Key/Value dictionaries to comma-separated list of k=v pairs'''
+
+    if not tags:
+        return ''
+    if tags == '*':
+        return '*'
+    elif isinstance(tags, dict):
+        return ','.join(f'{k}={v}' for k, v in sorted(tags.items()) if k and not k.startswith(f'{PROG}.'))
+    else:
+        return ','.join(f'{t["Key"]}={t["Value"]}' for t in sorted(tags, key=itemgetter('Key')) if t and not t['Key'].startswith(f'{PROG}.'))
+
+def get_tag_dict(tags):
+    '''List of Key/Value dictionaries to dictionary'''
+
+    return {t['Key']: t['Value'] for t in tags}
+
+def get_disk(volume_id):
+    return realpath(f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}')
+
+def get_device_name(volume, instance_id):
+    valid_letters = [chr(c) for c in range(ord('b'), ord('z') + 1)]
+    default_letter = valid_letters[sum(ord(c) for c in toList(volume['VolumeId'])) % len(valid_letters)]
+    instance = client('ec2').describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]
+    unavailable_letters = [m['DeviceName'][-1] for m in instance['BlockDeviceMappings']]
+    available_letters = [letter for letter in valid_letters if letter not in unavailable_letters]
+
+    if default_letter in available_letters:
+        return f'/dev/xvd{default_letter}'
+    elif available_letters:
+        return f'/dev/xvd{random.choice(available_letters)}'
+    else:
+        err('NO_AVAILABLE_DEVICES')
+
+def get_volumes(tags, availability_zone = None, only_active = True):
+    dbg(f'Getting volumes with tags {get_tag_string(tags)}' +
+       (f' in availability zone {availability_zone}' if availability_zone else ""))
+    filters = get_tag_filters(tags) +\
+        ([{'Name': 'availability-zone', 'Values': [availability_zone]}] if availability_zone else []) +\
+        ([{'Name': 'status', 'Values': ['creating', 'available', 'in-use']}] if only_active else [])
+    return client('ec2').describe_volumes(Filters=filters)['Volumes'] if tags else []
+
+def get_volume(tags, availability_zone = None):
+    match get_volumes(tags, availability_zone):
+        case []:
+            err('NO_VOLUMES')
+        case [volume]:
+            return volume
+        case _:
+            err('TOO_MANY_VOLUMES')
+
+def get_volume_state(volume):
+    suffix = f'/{volume["Attachments"][0]["State"]}' if 'Attachments' in volume and volume['Attachments'] else ''
+    return f'{volume["State"]}{suffix}'
+
+def get_volume_desc(volume):
+    return f'volume {volume["VolumeId"]} with tags {get_tag_string(volume["Tags"])} in availability zone {volume["AvailabilityZone"]}'
+
+def get_snapshots(snapshot_tags):
+    dbg(f'Getting snapshots with tags {get_tag_string(snapshot_tags)}')
+    return client('ec2').describe_snapshots(Filters=get_tag_filters(snapshot_tags))['Snapshots'] if snapshot_tags else []
+
+def get_instance_id():
+    def valid_instance_id(instance_id):
+        if re.fullmatch(r'i-[0-9a-f]{8,}', instance_id):
+            return instance_id
+        raise ValueError(f'Invalid instance id: {instance_id}')
+
+    try:
+        dbg('Getting instance id from /var/lib/cloud/data/instance-id')
+        with open('/var/lib/cloud/data/instance-id', 'r') as f:
+            return valid_instance_id(f.read().strip())
+    except Exception:
+        dbg('Failed to get instance id from /var/lib/cloud/data/instance-id')
+        try:
+            dbg('Getting instance id from IMDS')
+            imds='http://169.254.169.254/latest'
+            read=lambda r: r.read(512).decode('utf-8')
+
+            token_req = Request(f'{imds}/api/token', method='PUT', headers={'X-aws-ec2-metadata-token-ttl-seconds': '900'})
+            with urlopen(token_req, timeout=10) as resp:
+                id_req = Request(f'{imds}/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': read(resp)})
+                with urlopen(id_req, timeout=10) as resp2:
+                    return valid_instance_id(read(resp2))
+        except Exception as e:
+            err(text=f'Failed to get instance id from IMDS: {e}')
+
+def get_instance_state(instance_id):
+    dbg(f'Getting instance state for {instance_id}')
+    return client('ec2').describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['State']['Name']
+
+def get_availability_zone(instance_id):
+    dbg(f'Getting availability zone for instance {instance_id}')
+    return client('ec2').describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone']
+
+def update_timestamp(volume_id):
+    dbg(f'Updating the timestamp on volume {volume_id}')
+    return client('ec2').create_tags(
+        Resources=[volume_id],
+        Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
+
+def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 600, step_sec = 10):
+    volume_state = get_volume_state(volume)
+    valid_states_str = ', '.join(valid_states)
+
+    if volume_state in valid_states:
+        return volume
+    elif volume_state in wait_states:
+        if timeout_sec <= 0:
+            err(text = f'Timed out waiting for {get_volume_desc(volume)} to enter a valid state ({valid_states})')
+        else:
+            dbg(f'Waiting for volume {get_volume_desc(volume)}, currently in state {volume_state} for {step_sec}s ' +
+                f'until it reaches a valid state ({valid_states_str}) ({timeout_sec - step_sec}s left)')
+            sleep(step_sec)
+            return wait_for_volume(get_volume(get_tag_dict(volume['Tags']), volume['AvailabilityZone']), valid_states, wait_states, timeout_sec - step_sec, step_sec)
+    else:
+        err(text = f'Volume {volume["VolumeId"]} is in an invalid state {volume_state}')
+
+def wait_for_instance(instance_id, timeout_sec = 600):
+    match get_instance_state(instance_id):
+        case 'running' | 'stopped':
+            return
+        case 'pending':
+            if timeout_sec <= 0:
+                err('TIMEOUT_PENDING_INSTANCE')
+            else:
+                dbg(f'Instance {instance_id} is still in state "pending", waiting 10s...')
+                sleep(10)
+                return wait_for_instance(instance_id, timeout_sec - 10)
+        case error_state:
+            err(text = f'instance {instance_id} is in state {error_state}, so the volume can\'t be attached')
+
+# TODO: maybe have a minimum window of difference for a snapshot to be used instead of a volume
+def use_newer(volume, snapshot, options):
+    if snapshot['State'] == 'completed':
+        tags = get_tag_dict(volume['Tags'])
+        volume_timestamp = isoparse(tags[f'{PROG}.updated']) if f'{PROG}.updated' in tags.keys() else volume['CreateTime']
+        if volume_timestamp >= snapshot['StartTime']:
+            dbg(f'Using existing {get_volume_desc(volume)}')
+            return volume
+        else:
+            dbg(f'Using a new volume from a newer snapshot than {get_volume_desc(volume)}')
+            delete_volume(volume)
+            return create_volume(**options | {'snapshot': snapshot})
+    else:
+        dbg(f'Using existing {get_volume_desc(volume)}, the snapshot {snapshot["SnapshotId"]} is in state ({snapshot["State"]})')
+        return volume
+
+def print_result(result):
+    print(json.dumps(result, default=str, indent=4))
+
+############################# HIGH-LEVEL HELPERS ##############################
+
+def create_volume(tags, snapshot, availability_zone, size, kms_key_id, volume_initialization_rate):
+    if get_volumes(tags, availability_zone) != []:
+        err('TOO_MANY_VOLUMES')
+
+    msg(f'Creating a volume with tags {get_tag_string(tags)} ' +
+       (f'from snapshot {snapshot["SnapshotId"]} with tags {get_tag_string(snapshot["Tags"])}' if snapshot else ''))
+
+    options = {
+        'AvailabilityZone': availability_zone,
+        'Encrypted': True,
+        'Size': size,
+        'TagSpecifications': [{'ResourceType': 'volume', 'Tags': get_tag_spec(tags)}],
+        'VolumeType': 'gp3',
+    } | ({'KmsKeyId': kms_key_id} if kms_key_id else {}) \
+      | ({'SnapshotId': snapshot['SnapshotId']} if snapshot else {}) \
+      | ({'VolumeInitializationRate': volume_initialization_rate} if volume_initialization_rate and snapshot else {})
+
+    volume = client('ec2').create_volume(**options)
+    update_timestamp(volume['VolumeId'])
+
+    return volume
+
+def attach_volume(volume, instance_id):
+    wait_for_instance(instance_id)
+    volume_desc = get_volume_desc(volume)
+    volume_state = get_volume_state(volume)
+
+    match volume_state:
+        case 'available':
+            msg(f'Attaching {volume_desc} to instance {instance_id}')
+            return client('ec2').attach_volume(
+                VolumeId=volume['VolumeId'],
+                InstanceId=instance_id,
+                Device=get_device_name(volume, instance_id))
+        case 'creating' | 'in-use/detaching' | 'in-use/detached':
+            dbg(f'{volume_desc} is still in state {volume_state}, waiting...')
+            updated_volume = wait_for_volume(volume, wait_states = ['creating', 'in-use/detaching', 'in-use/detached'])
+            return attach_volume(updated_volume, instance_id)
+        case _:
+            err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
+
+def detach_volume(volume):
+    volume_desc = get_volume_desc(volume)
+
+    match get_volume_state(volume):
+        case 'in-use/attached':
+            msg(f'Detaching {volume_desc}')
+            ret = client('ec2').detach_volume(VolumeId=volume["VolumeId"])
+            update_timestamp(volume['VolumeId'])
+            return ret
+        case 'in-use/detaching' | 'in-use/detached':
+            dbg(f'{volume_desc} is already detaching, waiting...')
+            wait_for_volume(volume, wait_states = ['in-use/detaching', 'in-use/detached'])
+        case ('creating' | 'available' | 'deleting' | 'deleted') as state:
+            dbg(f'{volume_desc} is in state {state}, nothing to do')
+        case volume_state:
+            err(text = f'{volume_desc} is in state {volume_state} and can\'t be detached')
+
+def delete_volume(volume):
+    volume_desc = get_volume_desc(volume)
+    volume_state = get_volume_state(volume)
+
+    match volume_state:
+        case 'available':
+            msg(f'Deleting {volume_desc}')
+            return client('ec2').delete_volume(VolumeId=volume["VolumeId"])
+        case 'deleted' | 'deleting':
+            dbg(f'{volume_desc} is {volume_state}')
+        case 'in-use/detaching':
+            dbg(f'{volume_desc} is detaching, waiting...')
+            updated_volume = wait_for_volume(volume, wait_states = [volume_state])
+            return delete_volume(updated_volume)
+        case _:
+            err(text = f'{volume_desc} is in state {volume_state} and can\'t be deleted')
+
+def create_snapshot(volume, snapshot_tags):
+    snapshots = get_snapshots(snapshot_tags)
+
+    if snapshots:
+        err('SNAPSHOT_ALREADY_EXISTS')
+
+    msg(f'Creating a snapshot with tags {get_tag_string(snapshot_tags)} from ' + get_volume_desc(volume))
+
+    return client('ec2').create_snapshot(
+        TagSpecifications=[{'ResourceType': 'snapshot', 'Tags': get_tag_spec(snapshot_tags)}],
+        VolumeId=volume['VolumeId'])
+
+def delete_snapshot(snapshot):
+    msg(f'Deleting snapshot {snapshot["SnapshotId"]} with tags {get_tag_string(snapshot["Tags"])}')
+    return client('ec2').delete_snapshot(SnapshotId=snapshot['SnapshotId'])
+
+def format_volume(volume_id, fstype):
+    try:
+        device = get_disk(volume_id)
+        msg(f'Formatting {device} ({volume_id})')
+        run(['sudo', 'mkfs', '-t', fstype, device], capture_output=True, check=True)
+    except CalledProcessError as e:
+        err(f'mkfs failed with exit code {e.returncode}: {e.stderr.decode()}')
+
+def mount(volume_id, mountpoint, fstype):
+    device = get_disk(volume_id)
+
+    try:
+        for i in range(10):
+            if exists(device):
+                break
+            else:
+                dbg(f'Waiting for {device} to become available')
+                sleep(10)
+
+        p = run(['lsblk', '-n', '-o', 'fstype', device], capture_output=True, check=True)
+        if not p.stdout.decode().strip():
+            format_volume(volume_id, fstype)
+    except CalledProcessError as e:
+        err(f'lsblk failed with exit code {e.returncode}: {e.stderr.decode()}')
+
+    msg(f'Mounting {device} ({volume_id}) at {mountpoint}')
+    makedirs(mountpoint, exist_ok=True)
+
+    try:
+        cmd = ['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint]
+        run(cmd, capture_output=True, check=True)
+    except CalledProcessError as e:
+        err(f'mount failed with exit code {e.returncode}: {e.stderr.decode()}')
+
+def umount(mountpoint):
+    msg(f'Unmounting {mountpoint}')
+    try:
+        run(['sudo', 'umount', mountpoint], capture_output=True, check=True)
+    except CalledProcessError as e:
+        err(f'umount failed with exit code {e.returncode}: {e.stderr.decode()}')
+
+def instance_and_az_match(instance_id, availability_zone):
+    if instance_id and availability_zone:
+        if availability_zone != get_availability_zone(instance_id):
+            err('AZ_DOES_NOT_MATCH_INSTANCE')
+
+################################### ACTIONS ###################################
+
+# TODO: show also the instance id when the volume is mounted
+def list(tags, snapshot_tags, availability_zone):
+    if not tags and not snapshot_tags:
+        err('NO_TAGS_SPECIFIED')
+
+    volumes_result = {
+        'volumes': {
+            v['VolumeId']: {
+                'state': v['State'],
+                'availability-zone': v['AvailabilityZone'],
+                'tags': get_tag_string(v['Tags']),
+                'updated': get_tag_dict(v['Tags']).get(f'{PROG}.updated', v['CreateTime'])
+            } | ({'snapshot-id': v['SnapshotId']} if v['SnapshotId'] else {}) for v in get_volumes(tags, availability_zone, only_active=False)
+        }
+    } if tags else {}
+
+    snapshots_result = {
+        'snapshots': {
+            s['SnapshotId']: {
+                'state': s['State'],
+                'volume-id': s['VolumeId'],
+                'tags': get_tag_string(s['Tags']),
+                'created': s['StartTime'],
+            } for s in get_snapshots(snapshot_tags)
+        }
+    } if snapshot_tags else {}
+
+    return volumes_result | snapshots_result
+
+def attach(tags, snapshot_tags, instance_id, availability_zone, wipe, size, kms_key_id,
+           mountpoint, fstype, no_snapshots, volume_initialization_rate):
+    if wipe:
+        match get_volumes(tags, availability_zone):
+            case [vol]:
+                delete_volume(vol)
+
+    options = {
+        'availability_zone': availability_zone,
+        'kms_key_id': kms_key_id,
+        'size': size,
+        'tags' : tags,
+        'snapshot': None,
+        'volume_initialization_rate': volume_initialization_rate,
+    }
+
+    match get_volumes(tags, availability_zone), get_snapshots(tags), (get_snapshots(snapshot_tags) if snapshot_tags else []):
+        case [vol], [], _:
+            volume = vol
+        case [vol], [snapshot], _:
+            volume = use_newer(vol, snapshot, options) if not no_snapshots else vol
+        case ([], [snapshot], _) | ([], [], [snapshot]):
+            volume = create_volume(**options | {'snapshot': snapshot if snapshot['State'] == 'completed' and not no_snapshots else None})
+        case [], [], []:
+            volume = create_volume(**options)
+        case [_, _, *_], _, _:
+            err('TOO_MANY_VOLUMES')
+        case _, [_, _, *_], _:
+            err('TOO_MANY_SNAPSHOTS_W_VOLUME_TAGS')
+        case _, _, [_, _, *_]:
+            err('TOO_MANY_SNAPSHOTS_W_SNAPSHOT_TAGS')
+        case _:
+            err('b0rk')
+
+    result = attach_volume(volume, instance_id)
+
+    if mountpoint:
+        mount(volume['VolumeId'], mountpoint, fstype)
+
+    return result
+
+def detach(tags, availability_zone, wipe, mountpoint):
+    volume = get_volume(tags, availability_zone)
+
+    if mountpoint:
+        umount(mountpoint)
+
+    result = detach_volume(volume)
+
+    if wipe:
+        delete_volume(volume)
+
+    return result
+
+def snapshot(tags, snapshot_tags, no_clobber, availability_zone):
+    volume = get_volume(tags, availability_zone)
+
+    match get_snapshots(snapshot_tags):
+        case []:
+            return create_snapshot(volume, snapshot_tags)
+        case [snapshot]:
+            if no_clobber:
+                err('SNAPSHOT_ALREADY_EXISTS')
+            else:
+                delete_snapshot(snapshot)
+
+            return create_snapshot(volume, snapshot_tags)
+        case _:
+            err('TOO_MANY_SNAPSHOTS_W_SNAPSHOT_TAGS')
+
+def clean(tags, snapshot_tags, availability_zone, interactive):
+    if not tags and not snapshot_tags:
+        err('NO_TAGS_SPECIFIED')
+
+    msg('Deleting the following resources')
+    print_result(list(tags, snapshot_tags, availability_zone))
+
+    if interactive:
+        # TODO: add timeout
+        answer = input('Confirm? [Y/n] ')
+
+    if not interactive or answer in ['', 'y', 'Y', 'yes', 'Yes', 'YES']:
+        # TODO: don't fail if one operation fails
+        volumes_result = {
+            'volumes': [delete_volume(v) for v in get_volumes(tags, availability_zone)]
+        } if tags else {}
+
+        snapshots_result = {
+            'snapshots': [delete_snapshot(s) for s in get_snapshots(snapshot_tags)]
+        } if snapshot_tags else {}
+
+        return volumes_result | snapshots_result
+    else:
+        err('ABORTED')
+
+#################################### MAIN #####################################
+
+def main():
+    args = get_args()
+
+    # Fail if executed as root
+    if getuid() == 0 or getgid() == 0:
+        err('NO_ROOT')
+
+    # Fail if reserved tags are used
+    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
+        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
+    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
+        err('RESERVED_TAG')
+
+    if args.action in ['attach', 'detach', 'snapshot']:
+        instance_id = args.instance_id or get_instance_id()
+        availability_zone = args.availability_zone or get_availability_zone(instance_id)
+
+    # Execute the action
+    match args.action:
+        case 'list':
+            print_result(list(args.tags, args.snapshot_tags, args.availability_zone))
+        case 'attach':
+            if args.tags == '*':
+                err('ATTACH_REQUIRES_REAL_TAGS')
+            if args.mountpoint and not args.fstype:
+                err('MOUNTPOINT_WO_FSTYPE')
+            instance_and_az_match(args.instance_id, args.availability_zone)
+
+            extra_args = { 'instance_id': instance_id, 'availability_zone': availability_zone }
+            arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint',
+                         'fstype', 'no_snapshots', 'volume_initialization_rate']
+
+            print_result(attach(**{k: getattr(args, k) for k in arg_names} | extra_args))
+        case 'detach':
+            instance_and_az_match(args.instance_id, args.availability_zone)
+            print_result(detach(args.tags, availability_zone, args.wipe, args.mountpoint))
+        case 'snapshot':
+            if args.tags == '*':
+                err('SNAPSHOT_REQUIRES_REAL_TAGS')
+
+            print_result(snapshot(args.tags, args.snapshot_tags, args.no_clobber, availability_zone))
+        case 'clean':
+            print_result(clean(args.tags, args.snapshot_tags, args.availability_zone, args.interactive))
+        case _:
+            err('b0rk')
+
+if __name__ == '__main__':
+    main()
