@@ -27,15 +27,15 @@ While `vol` is general purpose, it was developed for use in CI.
 
 Some observations that lead to the development of this tool:
 * PR builds should ideally be as incremental, as possible
+  * Snapshots can make PR builds incremental on first build (a PR targeting a
+    release branch can start with a cloned workspace for that release branch)
 * Managing nodes with persistent storage is more problematic than managing
   persistent storage
-* Keeping stopped nodes costs more than keeping detached volumes
-* Tying nodes and storage together prevents node replacement/upgrade without
-  losing incrementality
+  * Tying nodes and storage together prevents node replacement/upgrade without
+    losing incrementality
 * Ephemeral nodes are good for consistency and security and are also the
   easiest to manage
-* Snapshots can make PR builds incremental on first build (a PR targeting
-  a release branch can start with a cloned workspace for that release branch)
+  * Keeping stopped nodes costs more than keeping detached volumes
 
 Note: in CI, it is recommended to use `--volume-initialization-rate 300` for
 best performance and consistency (additional costs apply).
