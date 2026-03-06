@@ -26,7 +26,7 @@ See the generated help sections below for more information, including examples.
 While `vol` is general purpose, it was developed for use in CI.
 
 Some observations that lead to the development of this tool:
-* CI builds should ideally be as incremental, as possible
+* PR builds should ideally be as incremental, as possible
 * Managing nodes with persistent storage is more problematic than managing
   persistent storage
 * Keeping stopped nodes costs more than keeping detached volumes
