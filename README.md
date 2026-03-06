@@ -21,6 +21,25 @@ to replicate volumes across availability zones.
 
 See the generated help sections below for more information, including examples.
 
+## What practical applications does this have?
+
+While `vol` is general purpose, it was developed for use in CI.
+
+Some observations that lead to the development of this tool:
+* PR builds should ideally be as incremental, as possible
+  * Snapshots can make PR builds incremental on first build (a PR targeting a
+    release branch can start with a cloned workspace for that release branch)
+* Managing nodes with persistent storage is more problematic than managing
+  persistent storage
+  * Tying nodes and storage together prevents node replacement/upgrade without
+    losing incrementality
+* Ephemeral nodes are good for consistency, security, cost and ease of
+  management
+  * Keeping stopped nodes costs more than keeping detached volumes
+
+Note: in CI, it is recommended to use `--volume-initialization-rate 300` for
+best performance and consistency (additional costs apply).
+
 ## Goals and scope
 
 * Generic/flexible
@@ -34,7 +53,7 @@ See the generated help sections below for more information, including examples.
 * Easy to deploy (one file + python/boto3)
 * Runs unprivileged (sudo to format/(u)mount)
 * Under 1k lines
-* Only Linux support (could extend in the future)
+* Only Linux support
 
 ## Usage
 
@@ -244,6 +263,12 @@ options:
                         availability zone for volumes, any if not set (default: None)
 %
 ```
+
+## Disclaimer
+
+When the `--mountpoint` option is used, volumes determined to be unformatted
+are formatted with no additional confirmation. There is a risk of data loss if
+that detection is (or ever becomes) inaccurate.
 
 ## Permissions
 
