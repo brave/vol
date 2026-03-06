@@ -33,8 +33,8 @@ Some observations that lead to the development of this tool:
   persistent storage
   * Tying nodes and storage together prevents node replacement/upgrade without
     losing incrementality
-* Ephemeral nodes are good for consistency and security and are also the
-  easiest to manage
+* Ephemeral nodes are good for consistency, security, cost and ease of
+  management
   * Keeping stopped nodes costs more than keeping detached volumes
 
 Note: in CI, it is recommended to use `--volume-initialization-rate 300` for
