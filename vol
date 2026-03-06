@@ -672,6 +672,7 @@ def main():
     if getuid() == 0 or getgid() == 0:
         err('NO_ROOT')
 
+    # TODO: check tags for invalid characters and fail early
     # Fail if reserved tags are used
     check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
         (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
