@@ -46,8 +46,8 @@ hadolint:
 # Build the docker image
 
 docker: hadolint
-	maybe_sudo="$$(id -nG|grep -qw docker && echo || echo sudo)"
-	$$maybe_sudo docker buildx build -t vol .
+	read -ra maybe_sudo <<<"$$(id -nG|grep -qw 'docker\|root' || echo sudo)"
+	"$${maybe_sudo[@]}" docker buildx build -t vol .
 
 # Generate the graph for the README
 
