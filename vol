@@ -19,7 +19,7 @@ from dateutil.parser import isoparse
 from hashlib import sha256
 from operator import itemgetter
 from os import getgid, getuid, makedirs
-from os.path import exists, realpath
+from os.path import exists
 from subprocess import CalledProcessError, run
 from textwrap import dedent
 from time import sleep
