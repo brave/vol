@@ -265,7 +265,7 @@ def get_tag_dict(tags):
     return {t['Key']: t['Value'] for t in tags}
 
 def get_disk(volume_id):
-    return realpath(f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}')
+    return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
 def get_device_name(volume, instance_id):
     valid_letters = [chr(c) for c in range(ord('b'), ord('z') + 1)]
