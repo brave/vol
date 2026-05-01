@@ -274,7 +274,7 @@ that detection is (or ever becomes) inaccurate.
 
 ### sudoers
 
-```
+```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
 Cmnd_Alias VOL_MKFS = /usr/sbin/mkfs ^-t ext4 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]*$
 Cmnd_Alias VOL_MOUNT = /usr/bin/mount ^-t ext4 -o noatime /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]* /mnt/point$
