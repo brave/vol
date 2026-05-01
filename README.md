@@ -272,6 +272,21 @@ that detection is (or ever becomes) inaccurate.
 
 ## Permissions
 
+### sudoers
+
+```
+sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
+Cmnd_Alias VOL_MKFS = /usr/sbin/mkfs ^-t ext4 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]*$
+Cmnd_Alias VOL_MOUNT = /usr/bin/mount ^-t ext4 -o noatime /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]* /mnt/point$
+Cmnd_Alias VOL_UMOUNT = /usr/bin/umount /mnt/point
+user ALL=(root) NOPASSWD: VOL_MKFS, VOL_MOUNT, VOL_UMOUNT
+EOF
+```
+
+requires sudo >=1.9.10 for regular expression support in sudoers
+
+### AWS IAM policy
+
 ```terraform
 data "aws_iam_policy_document" "vol" {
   statement {
