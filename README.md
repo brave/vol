@@ -285,7 +285,7 @@ EOF
 
 requires sudo >=1.9.10 for regular expression support in sudoers
 
-### AWS IAM policy
+### IAM policy
 
 ```terraform
 data "aws_iam_policy_document" "vol" {
