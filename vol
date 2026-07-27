@@ -536,7 +536,9 @@ def mount(volume_id, mountpoint, fstype):
 
     msg(f'Mounting {device} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
-    run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
+    match system():
+        case 'Darwin': run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
+        case _: run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
