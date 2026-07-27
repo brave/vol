@@ -17,7 +17,6 @@ from operator import itemgetter
 from platform import system
 from os import getgid, getuid, makedirs
 from os.path import exists
-from subprocess import CalledProcessError
 from textwrap import dedent
 from time import sleep
 from urllib.request import Request, urlopen
