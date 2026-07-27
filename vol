@@ -10,6 +10,7 @@ else:
     from datetime import UTC
 
 from boto3 import client
+from contextlib import suppress
 from datetime import date, datetime, MINYEAR
 from dateutil.parser import isoparse
 from hashlib import sha256
@@ -524,7 +525,8 @@ def format_volume(volume_id, fstype):
 
 def mount(volume_id, mountpoint, fstype):
     for i in range(10):
-        device = get_disk(volume_id)
+        with suppress(Exception):
+            device = get_disk(volume_id)
         if device and exists(device):
             break
         else:

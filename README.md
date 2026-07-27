@@ -153,7 +153,7 @@ vol attach \
     --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \
     --snapshot-tags type=bb.public.workspace,branch=master,platform=linux,arch=x64 \
     --size 256 \
-    --mountpoint /mnt/point
+    --mountpoint /home/ubuntu/workspace
 
 options:
   -h, --help            show this help message and exit
@@ -193,7 +193,7 @@ E.g.:
 
 vol detach \
     --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \
-    --mountpoint /mnt/point
+    --mountpoint /home/ubuntu/workspace
 
 options:
   -h, --help            show this help message and exit
