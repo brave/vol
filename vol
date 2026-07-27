@@ -273,7 +273,7 @@ def get_tag_dict(tags):
 def get_disk(volume_id):
     match system():
         case 'Darwin':
-            # TODO: use diskutil activity for tighter match
+            # TODO: filter by diskutil activity for a tighter match
             diskutil_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
             match diskutil_info.returncode:
                 case 0:
