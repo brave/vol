@@ -220,6 +220,7 @@ def err(template = None, text = None):
             'NO_AVAILABLE_DEVICES': 'All available device names are in use on the target instance',
             'NO_EMPTY_DISKS': 'Could not find a matching EBS volume (neither formatted, nor empty)',
             'NO_ROOT': 'Please don\'t run this script as root, it will call sudo if necessary ((u)mount/format)',
+            'NO_SUCH_DEVICE': 'The specified device does not exist',
             'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
             'NO_VOLUMES': 'No volumes found with the specified tags',
             'RESERVED_TAG': f'Tags starting with {PROG}. are reserved for internal use',
@@ -304,10 +305,13 @@ def get_device_name(volume, instance_id):
         err('NO_AVAILABLE_DEVICES')
 
 def is_formatted(device):
-    match system():
-        case 'Darwin': p = run(['plutil', '-extract', 'Content', 'raw', '-'], input=run(['diskutil', 'info', '-plist', device]).stdout)
-        case _: p = run(['lsblk', '-n', '-o', 'fstype', device])
-    return p.stdout.decode().strip() != ''
+    if device and exists(device):
+        match system():
+            case 'Darwin': p = run(['plutil', '-extract', 'Content', 'raw', '-'], input=run(['diskutil', 'info', '-plist', device]).stdout)
+            case _: p = run(['lsblk', '-n', '-o', 'fstype', device])
+        return p.stdout.strip() != ''
+    else:
+        err('NO_SUCH_DEVICE')
 
 def get_volumes(tags, availability_zone = None, only_active = True):
     dbg(f'Getting volumes with tags {get_tag_string(tags)}' +
