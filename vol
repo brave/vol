@@ -93,7 +93,7 @@ def get_args():
                     --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \\
                     --snapshot-tags type=bb.public.workspace,branch=master,platform=linux,arch=x64 \\
                     --size 256 \\
-                    --mountpoint /home/ubuntu/workspace
+                    --mountpoint /mnt/point
             ''',
             (
                 (['-f', '--fstype'], {'default': 'ext4' if system() != 'Darwin' else 'APFS', 'help': 'fs type to use with --mountpoint if the volume is not formatted'}),
@@ -121,7 +121,7 @@ def get_args():
 
                 %(prog)s \\
                     --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \\
-                    --mountpoint /home/ubuntu/workspace
+                    --mountpoint /mnt/point
             ''',
             (
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
