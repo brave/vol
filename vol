@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-# Requires: python+boto3; for (u)mount/format: sudo+util-linux
+# Requires: python+boto3; for (u)mount/format: sudo (+util-linux on linux)
 
-import argparse
-import json
-import random
-import re
-import sys
+import argparse, json, random, re, subprocess, sys
 
 if sys.version_info < (3, 11):
     from datetime import timezone
@@ -18,9 +14,10 @@ from datetime import date, datetime, MINYEAR
 from dateutil.parser import isoparse
 from hashlib import sha256
 from operator import itemgetter
+from platform import system
 from os import getgid, getuid, makedirs
 from os.path import exists
-from subprocess import CalledProcessError, run
+from subprocess import CalledProcessError
 from textwrap import dedent
 from time import sleep
 from urllib.request import Request, urlopen
@@ -99,7 +96,7 @@ def get_args():
                     --mountpoint /home/ubuntu/workspace
             ''',
             (
-                (['-f', '--fstype'], {'default': 'ext4', 'help': 'fs type to use with --mountpoint if the volume is not formatted'}),
+                (['-f', '--fstype'], {'default': 'ext4' if system() != 'Darwin' else 'APFS', 'help': 'fs type to use with --mountpoint if the volume is not formatted'}),
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default'}),
                 (['-k', '--kms-key-id'], {'help': 'KMS key to use for volume encryption, otherwise default'}),
                 (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux, create if doesn\'t exist'}),
@@ -216,7 +213,9 @@ def err(template = None, text = None):
             'ATTACH_REQUIRES_REAL_TAGS': 'The attach action may create volumes, so it requires non-wildcard tags',
             'AZ_DOES_NOT_MATCH_INSTANCE': 'The specified availability zone does not match the instance',
             'MOUNTPOINT_WO_FSTYPE': 'If a mountpoint is specified, the filesystem type also needs to be specified',
+            'MULTIPLE_EMPTY_DISKS': 'Found multiple empty EBS volumes attached, expected one',
             'NO_AVAILABLE_DEVICES': 'All available device names are in use on the target instance',
+            'NO_EMPTY_DISKS': 'Could not find a matching EBS volume (neither formatted, nor empty)',
             'NO_ROOT': 'Please don\'t run this script as root, it will call sudo if necessary ((u)mount/format)',
             'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
             'NO_VOLUMES': 'No volumes found with the specified tags',
@@ -264,8 +263,31 @@ def get_tag_dict(tags):
 
     return {t['Key']: t['Value'] for t in tags}
 
+def run(cmd, **kw):
+    return subprocess.run(cmd, **({'capture_output': True, 'text': True, 'check': True} | kw))
+
 def get_disk(volume_id):
-    return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
+    match system():
+        case 'Darwin':
+            # TODO: use diskutil activity for tighter match
+            diskutil_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
+            match diskutil_info.returncode:
+                case 0:
+                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=diskutil_info)
+                case _:
+                    candidates = json.loads(run(['plutil', '-convert', 'json', '-o', '-', '-'],
+                        input=run(['diskutil', 'list', '-plist', 'external', 'physical']).stdout).stdout)['WholeDisks']
+                    candidates_info = [json.loads(run(['plutil', '-convert', 'json', '-o', '-', '-'],
+                        input=run(['diskutil', 'info', '-plist', d]).stdout).stdout) for d in candidates]
+                    # TODO: could also match on TotalSize
+                    empty_ebs_volumes = [d['DeviceNode'] for d in candidates_info if d['VolumeName'] == '' and
+                        d['VolumeSize'] == 0 and d['Content'] == '' and d['MediaName'] == 'Amazon Elastic Block Store']
+                    match empty_ebs_volumes:
+                        case []: err('NO_EMPTY_DISKS')
+                        case [dev]: return dev
+                        case _: err('MULTIPLE_EMPTY_DISKS')
+        case _:
+            return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
 def get_device_name(volume, instance_id):
     valid_letters = [chr(c) for c in range(ord('b'), ord('z') + 1)]
@@ -495,9 +517,12 @@ def format_volume(volume_id, fstype):
     try:
         device = get_disk(volume_id)
         msg(f'Formatting {device} ({volume_id})')
-        run(['sudo', 'mkfs', '-t', fstype, device], capture_output=True, check=True)
+        match platform():
+            case 'Darwin': cmd = ['diskutil', 'eraseDisk', fstype, volume_id, device]
+            case _: cmd = ['mkfs', '-t', fstype, device]
+        run(['sudo'] + cmd)
     except CalledProcessError as e:
-        err(f'mkfs failed with exit code {e.returncode}: {e.stderr.decode()}')
+        err(f'failed with exit code {e.returncode}: {e.stderr.decode()}')
 
 def mount(volume_id, mountpoint, fstype):
     device = get_disk(volume_id)
@@ -510,7 +535,7 @@ def mount(volume_id, mountpoint, fstype):
                 dbg(f'Waiting for {device} to become available')
                 sleep(10)
 
-        p = run(['lsblk', '-n', '-o', 'fstype', device], capture_output=True, check=True)
+        p = run(['lsblk', '-n', '-o', 'fstype', device])
         if not p.stdout.decode().strip():
             format_volume(volume_id, fstype)
     except CalledProcessError as e:
@@ -520,15 +545,14 @@ def mount(volume_id, mountpoint, fstype):
     makedirs(mountpoint, exist_ok=True)
 
     try:
-        cmd = ['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint]
-        run(cmd, capture_output=True, check=True)
+        run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
     except CalledProcessError as e:
         err(f'mount failed with exit code {e.returncode}: {e.stderr.decode()}')
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
     try:
-        run(['sudo', 'umount', mountpoint], capture_output=True, check=True)
+        run(['sudo', 'umount', mountpoint])
     except CalledProcessError as e:
         err(f'umount failed with exit code {e.returncode}: {e.stderr.decode()}')
 
