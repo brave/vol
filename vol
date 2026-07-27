@@ -343,18 +343,15 @@ def get_instance_id():
             return valid_instance_id(f.read().strip())
     except Exception:
         dbg('Failed to get instance id from /var/lib/cloud/data/instance-id')
-        try:
-            dbg('Getting instance id from IMDS')
-            imds='http://169.254.169.254/latest'
-            read=lambda r: r.read(512).decode('utf-8')
+        dbg('Getting instance id from IMDS')
+        imds='http://169.254.169.254/latest'
+        read=lambda r: r.read(512).decode('utf-8')
 
-            token_req = Request(f'{imds}/api/token', method='PUT', headers={'X-aws-ec2-metadata-token-ttl-seconds': '900'})
-            with urlopen(token_req, timeout=10) as resp:
-                id_req = Request(f'{imds}/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': read(resp)})
-                with urlopen(id_req, timeout=10) as resp2:
-                    return valid_instance_id(read(resp2))
-        except Exception as e:
-            err(text=f'Failed to get instance id from IMDS: {e}')
+        token_req = Request(f'{imds}/api/token', method='PUT', headers={'X-aws-ec2-metadata-token-ttl-seconds': '900'})
+        with urlopen(token_req, timeout=10) as resp:
+            id_req = Request(f'{imds}/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': read(resp)})
+            with urlopen(id_req, timeout=10) as resp2:
+                return valid_instance_id(read(resp2))
 
 def get_instance_state(instance_id):
     dbg(f'Getting instance state for {instance_id}')
@@ -513,48 +510,38 @@ def delete_snapshot(snapshot):
     msg(f'Deleting snapshot {snapshot["SnapshotId"]} with tags {get_tag_string(snapshot["Tags"])}')
     return client('ec2').delete_snapshot(SnapshotId=snapshot['SnapshotId'])
 
+def is_formatted(device):
+    match system():
+        case 'Darwin': p = run(['plutil', '-extract', 'Content', 'raw', '-'], input=run(['diskutil', 'info', '-plist', device]).stdout)
+        case _: p = run(['lsblk', '-n', '-o', 'fstype', device])
+    return p.stdout.decode().strip() != ''
+
 def format_volume(volume_id, fstype):
-    try:
-        device = get_disk(volume_id)
-        msg(f'Formatting {device} ({volume_id})')
-        match platform():
-            case 'Darwin': cmd = ['diskutil', 'eraseDisk', fstype, volume_id, device]
-            case _: cmd = ['mkfs', '-t', fstype, device]
-        run(['sudo'] + cmd)
-    except CalledProcessError as e:
-        err(f'failed with exit code {e.returncode}: {e.stderr.decode()}')
+    device = get_disk(volume_id)
+    msg(f'Formatting {device} ({volume_id})')
+    match platform():
+        case 'Darwin': run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, device])
+        case _: run(['sudo', 'mkfs', '-t', fstype, device])
 
 def mount(volume_id, mountpoint, fstype):
     device = get_disk(volume_id)
 
-    try:
-        for i in range(10):
-            if exists(device):
-                break
-            else:
-                dbg(f'Waiting for {device} to become available')
-                sleep(10)
-
-        p = run(['lsblk', '-n', '-o', 'fstype', device])
-        if not p.stdout.decode().strip():
-            format_volume(volume_id, fstype)
-    except CalledProcessError as e:
-        err(f'lsblk failed with exit code {e.returncode}: {e.stderr.decode()}')
+    for i in range(10):
+        if exists(device):
+            break
+        else:
+            dbg(f'Waiting for {device} to become available')
+            sleep(10)
+    if not is_formatted(device):
+        format_volume(volume_id, fstype)
 
     msg(f'Mounting {device} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
-
-    try:
-        run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
-    except CalledProcessError as e:
-        err(f'mount failed with exit code {e.returncode}: {e.stderr.decode()}')
+    run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
-    try:
-        run(['sudo'] + (['diskutil'] if system() == 'Darwin' else []) + ['umount', mountpoint])
-    except CalledProcessError as e:
-        err(f'umount failed with exit code {e.returncode}: {e.stderr.decode()}')
+    run(['sudo'] + (['diskutil'] if system() == 'Darwin' else []) + ['umount', mountpoint])
 
 def instance_and_az_match(instance_id, availability_zone):
     if instance_id and availability_zone:
