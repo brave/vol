@@ -552,7 +552,7 @@ def mount(volume_id, mountpoint, fstype):
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
     try:
-        run(['sudo', 'umount', mountpoint])
+        run(['sudo'] + (['diskutil'] if system() == 'Darwin' else []) + ['umount', mountpoint])
     except CalledProcessError as e:
         err(f'umount failed with exit code {e.returncode}: {e.stderr.decode()}')
 
