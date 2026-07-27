@@ -524,14 +524,14 @@ def format_volume(volume_id, fstype):
         case _: run(['sudo', 'mkfs', '-t', fstype, device])
 
 def mount(volume_id, mountpoint, fstype):
-    device = get_disk(volume_id)
-
     for i in range(10):
-        if exists(device):
+        device = get_disk(volume_id)
+        if device and exists(device):
             break
         else:
             dbg(f'Waiting for {device} to become available')
             sleep(10)
+
     if not is_formatted(device):
         format_volume(volume_id, fstype)
 
