@@ -316,8 +316,8 @@ def is_formatted(device):
     if device and exists(device):
         match system():
             case 'Darwin': p = run2json(['diskutil', 'info', '-plist', device])['Content']
-            case _: p = run(['lsblk', '-n', '-o', 'fstype', device])
-        return p.stdout.strip() != ''
+            case _: p = run(['lsblk', '-n', '-o', 'fstype', device]).stdout
+        return not p.strip()
     else:
         err('NO_SUCH_DEVICE')
 
