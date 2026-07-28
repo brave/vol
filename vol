@@ -558,18 +558,18 @@ def format_volume(volume_id, fstype):
             run(['sudo', 'mkfs', '-t', fstype, device])
 
 def mount(volume_id, mountpoint, fstype):
-    device = wait_for_disk(volume_id)
+    disk = wait_for_disk(volume_id)
 
-    if not is_formatted(device):
+    if not is_formatted(disk):
         format_volume(volume_id, fstype)
 
-    msg(f'Mounting {device} ({volume_id}) at {mountpoint}')
+    msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
             run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
         case _:
-            run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
+            run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', disk, mountpoint])
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
