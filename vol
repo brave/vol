@@ -224,7 +224,6 @@ def err(template = None, text = None):
             'NO_AVAILABLE_DEVICES': 'All available device names are in use on the target instance',
             'NO_EMPTY_EBS': 'Could not find a matching EBS volume (neither formatted, nor empty)',
             'NO_ROOT': 'Please don\'t run this script as root, it will call sudo if necessary ((u)mount/format)',
-            'NO_SUCH_DEVICE': 'The specified device does not exist',
             'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
             'NO_VOLUMES': 'No volumes found with the specified tags',
             'RESERVED_TAG': f'Tags starting with {PROG}. are reserved for internal use',
@@ -310,16 +309,16 @@ def get_device_name(volume, instance_id):
     else:
         err('NO_AVAILABLE_DEVICES')
 
-def is_formatted(device):
-    if device and exists(device):
+def is_formatted(disk):
+    if disk and exists(disk):
         match system():
             case 'Darwin':
-                p = run2json(['diskutil', 'info', '-plist', device])['Content']
+                p = run2json(['diskutil', 'info', '-plist', disk])['Content']
             case _:
-                p = run(['lsblk', '-n', '-o', 'fstype', device]).stdout
+                p = run(['lsblk', '-n', '-o', 'fstype', disk]).stdout
         return not p.strip()
     else:
-        err('NO_SUCH_DEVICE')
+        err(text = 'Disk {disk} does not exist')
 
 def is_empty_ebs(device_info):
     return (
@@ -397,13 +396,13 @@ def update_timestamp(volume_id):
 def wait_for_disk(volume_id):
     for i in range(10):
         with suppress(Exception):
-            if (device := get_disk(volume_id)) and exists(device):
-                return device
+            if (disk := get_disk(volume_id)) and exists(disk):
+                return disk
             else:
-                dbg(f'Waiting for {device} to become available')
+                dbg(f'Waiting for {disk} to become available')
                 sleep(10)
 
-    err(text = f'Disk {device} is not available')
+    err(text = f'Disk {disk} is not available')
 
 def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 600, step_sec = 10):
     volume_state = get_volume_state(volume)
@@ -549,13 +548,13 @@ def delete_snapshot(snapshot):
     return client('ec2').delete_snapshot(SnapshotId=snapshot['SnapshotId'])
 
 def format_volume(volume_id, fstype):
-    device = get_disk(volume_id)
-    msg(f'Formatting {device} ({volume_id})')
+    disk = get_disk(volume_id)
+    msg(f'Formatting {disk} ({volume_id})')
     match platform():
         case 'Darwin':
-            run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, device])
+            run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, disk])
         case _:
-            run(['sudo', 'mkfs', '-t', fstype, device])
+            run(['sudo', 'mkfs', '-t', fstype, disk])
 
 def mount(volume_id, mountpoint, fstype):
     disk = wait_for_disk(volume_id)
