@@ -315,8 +315,10 @@ def get_device_name(volume, instance_id):
 def is_formatted(device):
     if device and exists(device):
         match system():
-            case 'Darwin': p = run2json(['diskutil', 'info', '-plist', device])['Content']
-            case _: p = run(['lsblk', '-n', '-o', 'fstype', device]).stdout
+            case 'Darwin':
+                p = run2json(['diskutil', 'info', '-plist', device])['Content']
+            case _:
+                p = run(['lsblk', '-n', '-o', 'fstype', device]).stdout
         return not p.strip()
     else:
         err('NO_SUCH_DEVICE')
@@ -532,8 +534,10 @@ def format_volume(volume_id, fstype):
     device = get_disk(volume_id)
     msg(f'Formatting {device} ({volume_id})')
     match platform():
-        case 'Darwin': run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, device])
-        case _: run(['sudo', 'mkfs', '-t', fstype, device])
+        case 'Darwin':
+            run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, device])
+        case _:
+            run(['sudo', 'mkfs', '-t', fstype, device])
 
 def mount(volume_id, mountpoint, fstype):
     for i in range(10):
@@ -551,8 +555,10 @@ def mount(volume_id, mountpoint, fstype):
     msg(f'Mounting {device} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
     match system():
-        case 'Darwin': run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
-        case _: run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
+        case 'Darwin':
+            run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
+        case _:
+            run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint])
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
