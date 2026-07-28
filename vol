@@ -394,6 +394,17 @@ def update_timestamp(volume_id):
         Resources=[volume_id],
         Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
+def wait_for_device(volume_id):
+    for i in range(10):
+        with suppress(Exception):
+            if (device := get_disk(volume_id)) and exists(device):
+                return device
+            else:
+                dbg(f'Waiting for {device} to become available')
+                sleep(10)
+
+    err(text = f'Disk {device} is not available')
+
 def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 600, step_sec = 10):
     volume_state = get_volume_state(volume)
     valid_states_str = ', '.join(valid_states)
@@ -547,13 +558,7 @@ def format_volume(volume_id, fstype):
             run(['sudo', 'mkfs', '-t', fstype, device])
 
 def mount(volume_id, mountpoint, fstype):
-    for i in range(10):
-        with suppress(Exception):
-            if (device := get_disk(volume_id)) and exists(device):
-                break
-            else:
-                dbg(f'Waiting for {device} to become available')
-                sleep(10)
+    device = wait_for_device(volume_id)
 
     if not is_formatted(device):
         format_volume(volume_id, fstype)
