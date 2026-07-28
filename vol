@@ -280,10 +280,10 @@ def get_tag_dict(tags):
 def get_disk(volume_id):
     match system():
         case 'Darwin':
-            diskutil_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
-            match diskutil_info.returncode:
+            disk_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
+            match disk_info.returncode:
                 case 0:
-                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=diskutil_info.stdout).stdout
+                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=disk_info.stdout).stdout
                 case _:
                     # TODO: filter by diskutil activity for a tighter match
                     candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
