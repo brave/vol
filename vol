@@ -320,13 +320,13 @@ def is_formatted(disk):
     else:
         err(text = 'Disk {disk} does not exist')
 
-def is_empty_ebs(device_info):
+def is_empty_ebs(disk_info):
     return (
         # TODO: could also match on TotalSize
-        device_info['VolumeName'] == '' and
-        device_info['VolumeSize'] == 0 and
-        device_info['Content'] == '' and
-        device_info['MediaName'] == 'Amazon Elastic Block Store'
+        disk_info['VolumeName'] == '' and
+        disk_info['VolumeSize'] == 0 and
+        disk_info['Content'] == '' and
+        disk_info['MediaName'] == 'Amazon Elastic Block Store'
     )
 
 def get_volumes(tags, availability_zone = None, only_active = True):
