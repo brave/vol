@@ -548,12 +548,11 @@ def format_volume(volume_id, fstype):
 def mount(volume_id, mountpoint, fstype):
     for i in range(10):
         with suppress(Exception):
-            device = get_disk(volume_id)
-        if device and exists(device):
-            break
-        else:
-            dbg(f'Waiting for {device} to become available')
-            sleep(10)
+            if (device := get_disk(volume_id)) and exists(device):
+                break
+            else:
+                dbg(f'Waiting for {device} to become available')
+                sleep(10)
 
     if not is_formatted(device):
         format_volume(volume_id, fstype)
