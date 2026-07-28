@@ -724,7 +724,6 @@ def main():
         case 'snapshot':
             if args.tags == '*':
                 err('SNAPSHOT_REQUIRES_REAL_TAGS')
-
             print_result(snapshot(args.tags, args.snapshot_tags, args.no_clobber, availability_zone))
         case 'clean':
             print_result(clean(args.tags, args.snapshot_tags, args.availability_zone, args.interactive))
