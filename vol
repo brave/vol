@@ -394,7 +394,7 @@ def update_timestamp(volume_id):
         Resources=[volume_id],
         Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
-def wait_for_device(volume_id):
+def wait_for_disk(volume_id):
     for i in range(10):
         with suppress(Exception):
             if (device := get_disk(volume_id)) and exists(device):
@@ -558,7 +558,7 @@ def format_volume(volume_id, fstype):
             run(['sudo', 'mkfs', '-t', fstype, device])
 
 def mount(volume_id, mountpoint, fstype):
-    device = wait_for_device(volume_id)
+    device = wait_for_disk(volume_id)
 
     if not is_formatted(device):
         format_volume(volume_id, fstype)
