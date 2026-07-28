@@ -358,12 +358,12 @@ def get_snapshots(snapshot_tags):
     dbg(f'Getting snapshots with tags {get_tag_string(snapshot_tags)}')
     return client('ec2').describe_snapshots(Filters=get_tag_filters(snapshot_tags))['Snapshots'] if snapshot_tags else []
 
-def get_instance_id():
-    def valid_instance_id(instance_id):
-        if re.fullmatch(r'i-[0-9a-f]{8,}', instance_id):
-            return instance_id
-        raise ValueError(f'Invalid instance id: {instance_id}')
+def valid_instance_id(instance_id):
+    if re.fullmatch(r'i-[0-9a-f]{8,}', instance_id):
+        return instance_id
+    raise ValueError(f'Invalid instance id: {instance_id}')
 
+def get_instance_id():
     try:
         dbg('Getting instance id from /var/lib/cloud/data/instance-id')
         with open('/var/lib/cloud/data/instance-id', 'r') as f:
