@@ -241,6 +241,13 @@ def err(template = None, text = None):
     else:
         raise ValueError('Can\'t call this with empty arguments')
 
+def validate_tags(args):
+    # TODO: check tags for invalid characters and fail early
+    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
+        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
+    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
+        err('RESERVED_TAG')
+
 def get_tag_filters(tags):
     '''Dictionary to list of Name/Values dictionaries'''
 
@@ -687,22 +694,15 @@ def clean(tags, snapshot_tags, availability_zone, interactive):
 def main():
     args = get_args()
 
-    # Fail if executed as root
     if getuid() == 0 or getgid() == 0:
         err('NO_ROOT')
 
-    # TODO: check tags for invalid characters and fail early
-    # Fail if reserved tags are used
-    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
-        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
-    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
-        err('RESERVED_TAG')
+    validate_tags(args)
 
     if args.action in ['attach', 'detach', 'snapshot']:
         instance_id = args.instance_id or get_instance_id()
         availability_zone = args.availability_zone or get_availability_zone(instance_id)
 
-    # Execute the action
     match args.action:
         case 'list':
             print_result(list(args.tags, args.snapshot_tags, args.availability_zone))
