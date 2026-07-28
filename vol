@@ -219,9 +219,9 @@ def err(template = None, text = None):
             'ATTACH_REQUIRES_REAL_TAGS': 'The attach action may create volumes, so it requires non-wildcard tags',
             'AZ_DOES_NOT_MATCH_INSTANCE': 'The specified availability zone does not match the instance',
             'MOUNTPOINT_WO_FSTYPE': 'If a mountpoint is specified, the filesystem type also needs to be specified',
-            'MULTIPLE_EMPTY_DISKS': 'Found multiple empty EBS volumes attached, expected one',
+            'MULTIPLE_EMPTY_EBS': 'Found multiple empty EBS volumes attached, expected one',
             'NO_AVAILABLE_DEVICES': 'All available device names are in use on the target instance',
-            'NO_EMPTY_DISKS': 'Could not find a matching EBS volume (neither formatted, nor empty)',
+            'NO_EMPTY_EBS': 'Could not find a matching EBS volume (neither formatted, nor empty)',
             'NO_ROOT': 'Please don\'t run this script as root, it will call sudo if necessary ((u)mount/format)',
             'NO_SUCH_DEVICE': 'The specified device does not exist',
             'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
@@ -288,13 +288,10 @@ def get_disk(volume_id):
                     # TODO: filter by diskutil activity for a tighter match
                     candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                     candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
-                    # TODO: could also match on TotalSize
-                    empty_ebs_volumes = [d['DeviceNode'] for d in candidates_info if d['VolumeName'] == '' and
-                        d['VolumeSize'] == 0 and d['Content'] == '' and d['MediaName'] == 'Amazon Elastic Block Store']
-                    match empty_ebs_volumes:
-                        case []: err('NO_EMPTY_DISKS')
+                    match [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)]:
+                        case []: err('NO_EMPTY_EBS')
                         case [dev]: return dev
-                        case _: err('MULTIPLE_EMPTY_DISKS')
+                        case _: err('MULTIPLE_EMPTY_EBS')
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
@@ -322,6 +319,15 @@ def is_formatted(device):
         return not p.strip()
     else:
         err('NO_SUCH_DEVICE')
+
+def is_empty_ebs(device_info):
+    return (
+        # TODO: could also match on TotalSize
+        device_info['VolumeName'] == '' and
+        device_info['VolumeSize'] == 0 and
+        device_info['Content'] == '' and
+        device_info['MediaName'] == 'Amazon Elastic Block Store'
+    )
 
 def get_volumes(tags, availability_zone = None, only_active = True):
     dbg(f'Getting volumes with tags {get_tag_string(tags)}' +
