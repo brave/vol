@@ -281,10 +281,10 @@ def get_disk(volume_id):
     match system():
         case 'Darwin':
             # TODO: filter by diskutil activity for a tighter match
-            diskutil_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
+            diskutil_info = run(['diskutil', 'info', '-plist', volume_id], check=False).stdout
             match diskutil_info.returncode:
                 case 0:
-                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=diskutil_info)
+                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=diskutil_info).stdout
                 case _:
                     candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                     candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
