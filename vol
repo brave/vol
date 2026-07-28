@@ -227,7 +227,7 @@ def err(template = None, text = None):
             'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
             'NO_VOLUMES': 'No volumes found with the specified tags',
             'RESERVED_TAG': f'Tags starting with {PROG}. are reserved for internal use',
-            'SNAPSHOT_ALREADY_EXISTS': 'A snapshot with tags the specified tags already exists',
+            'SNAPSHOT_ALREADY_EXISTS': 'A snapshot with the specified tags already exists',
             'SNAPSHOT_REQUIRES_REAL_TAGS': 'The snapshot action creates snapshots, so it requires non-wildcard snapshot tags',
             'TIMEOUT_PENDING_INSTANCE': 'Timed out waiting for a pending instance to become available',
             'TOO_MANY_VOLUMES': 'The number of volumes with the specified tags exceeds 1',
