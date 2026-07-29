@@ -11,7 +11,6 @@ else:
     from datetime import UTC
 
 from boto3 import client
-from contextlib import suppress
 from datetime import date, datetime, MINYEAR
 from dateutil.parser import isoparse
 from hashlib import sha256
