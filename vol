@@ -317,7 +317,7 @@ def is_formatted(disk):
                 p = run2json(['diskutil', 'info', '-plist', disk])['Content']
             case _:
                 p = run(['lsblk', '-n', '-o', 'fstype', disk]).stdout
-        return not p.strip()
+        return bool(p.strip())
     else:
         err(text = 'Disk {disk} does not exist')
 
