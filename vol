@@ -554,6 +554,7 @@ def format_volume(volume_id, fstype):
     match system():
         case 'Darwin':
             run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, disk])
+            run(['sudo', 'diskutil', 'umountDisk', disk])
         case _:
             run(['sudo', 'mkfs', '-t', fstype, disk])
 
