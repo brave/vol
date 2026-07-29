@@ -189,7 +189,10 @@ def get_args():
 toList = list
 
 def run(cmd, **kw):
-    return subprocess.run(cmd, **({'capture_output': True, 'text': True, 'check': True} | kw))
+    try:
+        return subprocess.run(cmd, **({'capture_output': True, 'text': True, 'check': True} | kw))
+    except subprocess.CalledProcessError as e:
+        err(text = f'Command {cmd} failed with exit status {e.returncode}:\n{e.stderr}')
 
 def run2json(cmd):
     return json.loads(run(['plutil', '-convert', 'json', '-o', '-', '-'], input=run(cmd).stdout).stdout)
@@ -282,7 +285,7 @@ def get_disk(volume_id, fail = True):
             disk_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
             match disk_info.returncode:
                 case 0:
-                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=disk_info.stdout).stdout
+                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=disk_info.stdout).stdout.strip()
                 case _:
                     # TODO: filter by diskutil activity for a tighter match
                     candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
