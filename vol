@@ -277,7 +277,7 @@ def get_tag_dict(tags):
 
     return {t['Key']: t['Value'] for t in tags}
 
-def get_disk(volume_id):
+def get_disk(volume_id, fail = True):
     match system():
         case 'Darwin':
             disk_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
@@ -288,9 +288,10 @@ def get_disk(volume_id):
                     # TODO: filter by diskutil activity for a tighter match
                     candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                     candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
-                    match [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)]:
-                        case []: err('NO_EMPTY_EBS')
-                        case [dev]: return dev
+                    match [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)], fail:
+                        case [], True: err('NO_EMPTY_EBS')
+                        case [], False: return None
+                        case [dev], _: return dev
                         case _: err('MULTIPLE_EMPTY_EBS')
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
@@ -395,11 +396,10 @@ def update_timestamp(volume_id):
 
 def wait_for_disk(volume_id):
     for i in range(10):
-        try:
-            disk = get_disk(volume_id)
-            if disk and exists(disk):
-                return disk
-        except SystemExit:
+        disk = get_disk(volume_id, fail=False)
+        if disk and exists(disk):
+            return disk
+        else:
             dbg(f'Waiting for the disk to become available')
             sleep(10)
 
