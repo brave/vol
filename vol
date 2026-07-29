@@ -551,7 +551,7 @@ def delete_snapshot(snapshot):
 def format_volume(volume_id, fstype):
     disk = get_disk(volume_id)
     msg(f'Formatting {disk} ({volume_id})')
-    match platform():
+    match system():
         case 'Darwin':
             run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, disk])
         case _:
