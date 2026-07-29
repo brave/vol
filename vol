@@ -405,7 +405,7 @@ def wait_for_disk(volume_id):
             dbg(f'Waiting for the disk to become available')
             sleep(5)
 
-    err(text = f'Disk{' ' + disk if disk else ''} for volume {volume_id} is not available')
+    err(text = f'Disk{" " + disk if disk else ""} for volume {volume_id} is not available')
 
 def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 600, step_sec = 10):
     volume_state = get_volume_state(volume)
