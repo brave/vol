@@ -556,6 +556,7 @@ def format_volume(volume_id, fstype):
     msg(f'Formatting {disk} ({volume_id})')
     match system():
         case 'Darwin':
+            # On macOS, we rely on the disk name matching the EBS volume ID
             run(['sudo', 'diskutil', 'eraseDisk', fstype, volume_id, disk])
             run(['sudo', 'diskutil', 'umountDisk', disk])
         case _:
