@@ -395,12 +395,13 @@ def update_timestamp(volume_id):
 
 def wait_for_disk(volume_id):
     for i in range(10):
-        with suppress(Exception):
-            if (disk := get_disk(volume_id)) and exists(disk):
+        try:
+            disk = get_disk(volume_id)
+            if disk and exists(disk):
                 return disk
-            else:
-                dbg(f'Waiting for {disk} to become available')
-                sleep(10)
+        except SystemExit:
+            dbg(f'Waiting for the disk to become available')
+            sleep(10)
 
     err(text = f'Disk{' ' + disk if disk else ''} for volume {volume_id} is not available')
 
