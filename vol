@@ -11,6 +11,7 @@ else:
     from datetime import UTC
 
 from boto3 import client
+from contextlib import suppress
 from datetime import date, datetime, MINYEAR
 from dateutil.parser import isoparse
 from hashlib import sha256
@@ -570,6 +571,8 @@ def mount(volume_id, mountpoint, fstype):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
+            with suppress(Exception):
+                run(['sudo', 'diskutil', 'umount', volume_id])
             run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
         case _:
             run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', disk, mountpoint])
