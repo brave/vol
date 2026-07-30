@@ -184,6 +184,16 @@ def get_args():
 
     return parser.parse_args()
 
+def validate(args):
+    if getuid() == 0 or getgid() == 0:
+        err('NO_ROOT')
+
+    # TODO: check tags for invalid characters and fail early
+    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
+        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
+    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
+        err('RESERVED_TAG')
+
 ############################## LOW-LEVEL HELPERS ##############################
 
 toList = list
@@ -247,13 +257,6 @@ def err(template = None, text = None):
         return msg(text, log_level = 'error')
     else:
         raise ValueError('Can\'t call this with empty arguments')
-
-def validate_tags(args):
-    # TODO: check tags for invalid characters and fail early
-    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
-        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
-    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
-        err('RESERVED_TAG')
 
 def get_tag_filters(tags):
     '''Dictionary to list of Name/Values dictionaries'''
@@ -330,8 +333,7 @@ def is_formatted(disk):
         err(text = 'Disk {disk} does not exist')
 
 def is_empty_ebs(disk_info):
-    return (
-        # TODO: could also match on TotalSize
+    return ( # TODO: could also match on TotalSize
         disk_info['VolumeName'] == '' and
         disk_info['VolumeSize'] == 0 and
         disk_info['Content'] == '' and
@@ -727,10 +729,7 @@ def clean(tags, snapshot_tags, availability_zone, interactive):
 def main():
     args = get_args()
 
-    if getuid() == 0 or getgid() == 0:
-        err('NO_ROOT')
-
-    validate_tags(args)
+    validate(args)
 
     if args.action in ['attach', 'detach', 'snapshot']:
         instance_id = args.instance_id or get_instance_id()
