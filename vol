@@ -126,7 +126,7 @@ def get_args():
             (
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
                 (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux'}),
-                (['-t', '--tags'], {'type': tag_type, 'default': [], 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-t', '--tags'], {'type': tag_type, 'default': {}, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
                 (['-w', '--wipe'], {'type': bool, 'default': False, 'help': 'delete the matching volume'}),
                 (['-z', '--availability-zone'], {'help': 'availability zone, required, derived from instance-id if not set'}),
             ),
@@ -147,7 +147,7 @@ def get_args():
             (
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
                 (['-n', '--no-clobber'], {'type': bool, 'default': False, 'help': 'do not overwrite existing snapshots'}),
-                (['-t', '--tags'], {'type': tag_type, 'default': [], 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-t', '--tags'], {'type': tag_type, 'default': {}, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
                 (['-T', '--snapshot-tags'], {'type': tag_type, 'required': True, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
                 (['-z', '--availability-zone'], {'help': 'availability zone, required, derived from instance-id if not set'}),
             ),
