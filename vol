@@ -191,7 +191,7 @@ toList = list
 def run(cmd, **kw):
     try:
         command = ['sudo'] + cmd if kw.get('sudo') else cmd
-        options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k!='sudo'}
+        options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k != 'sudo'}
         return subprocess.run(command, **options)
     except subprocess.CalledProcessError as e:
         err(text = f'Command {cmd} failed with exit status {e.returncode}:\n{e.stderr}')
