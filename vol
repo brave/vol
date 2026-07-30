@@ -295,7 +295,8 @@ def get_disk(volume_id, fail = True):
                     # TODO: filter by diskutil activity for a tighter match
                     candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                     candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
-                    match [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)], fail:
+                    empty_ebs_disks = [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)]
+                    match empty_ebs_disks, fail:
                         case [], True: err('NO_EMPTY_EBS')
                         case [], False: return None
                         case [dev], _: return dev
