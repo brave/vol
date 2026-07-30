@@ -190,12 +190,17 @@ toList = list
 
 def run(cmd, **kw):
     try:
-        return subprocess.run(cmd, **({'capture_output': True, 'text': True, 'check': True} | kw))
+        command = ['sudo'] + cmd if kw.get('sudo') else cmd
+        options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k!='sudo'}
+        return subprocess.run(command, **options)
     except subprocess.CalledProcessError as e:
         err(text = f'Command {cmd} failed with exit status {e.returncode}:\n{e.stderr}')
 
 def run2json(cmd):
     return json.loads(run(['plutil', '-convert', 'json', '-o', '-', '-'], input=run(cmd).stdout).stdout)
+
+def is_mac_admin():
+    return run(['dseditgroup', '-o', 'checkmember', 'admin'], check=False).returncode == 0
 
 # TODO: enable choosing max verbosity on the command line
 def msg(msg, log_level = 'info'):
@@ -556,10 +561,10 @@ def format_volume(volume_id, fstype):
     match system():
         case 'Darwin':
             # On macOS, we rely on the disk name matching the EBS volume ID
-            run(['sudo', 'diskutil', 'eraseDisk', '-noEFI', fstype, volume_id, disk])
-            run(['sudo', 'diskutil', 'umountDisk', disk])
+            run(['diskutil', 'eraseDisk', '-noEFI', fstype, volume_id, disk], sudo=True)
+            run(['diskutil', 'umountDisk', disk], sudo=not is_mac_admin())
         case _:
-            run(['sudo', 'mkfs', '-t', fstype, disk])
+            run(['mkfs', '-t', fstype, disk], sudo=True)
 
 def mount(volume_id, mountpoint, fstype):
     disk = wait_for_disk(volume_id)
@@ -572,14 +577,18 @@ def mount(volume_id, mountpoint, fstype):
     match system():
         case 'Darwin':
             if run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip():
-                run(['sudo', 'diskutil', 'umount', volume_id])
-            run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
+                run(['diskutil', 'umount', volume_id], sudo=not is_mac_admin())
+            run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
         case _:
-            run(['sudo', 'mount', '-t', fstype, '-o', 'noatime', disk, mountpoint])
+            run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
-    run(['sudo'] + (['diskutil'] if system() == 'Darwin' else []) + ['umount', mountpoint])
+    match system():
+        case 'Darwin':
+            run(['diskutil', 'umount', mountpoint], sudo=not is_mac_admin())
+        case _:
+            run(['umount', mountpoint], sudo=True)
 
 def instance_and_az_match(instance_id, availability_zone):
     if instance_id and availability_zone:
