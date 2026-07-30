@@ -729,12 +729,15 @@ def main():
         case 'list':
             print_result(list(args.tags, args.snapshot_tags, args.availability_zone))
         case 'attach':
+            instance_and_az_match(instance_id, availability_zone)
+
             extra_args = { 'instance_id': instance_id, 'availability_zone': availability_zone }
             arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint',
                          'fstype', 'no_snapshots', 'volume_initialization_rate']
 
             print_result(attach(**{k: getattr(args, k) for k in arg_names} | extra_args))
         case 'detach':
+            instance_and_az_match(instance_id, availability_zone)
             print_result(detach(args.tags, availability_zone, args.wipe, args.mountpoint))
         case 'snapshot':
             print_result(snapshot(args.tags, args.snapshot_tags, args.no_clobber, availability_zone))
@@ -759,9 +762,6 @@ def validate(args):
                 err('ATTACH_REQUIRES_REAL_TAGS')
             if args.mountpoint and not args.fstype:
                 err('MOUNTPOINT_WO_FSTYPE')
-            instance_and_az_match(args.instance_id, args.availability_zone)
-        case 'detach':
-            instance_and_az_match(args.instance_id, args.availability_zone)
         case 'snapshot':
             if args.tags == '*':
                 err('SNAPSHOT_REQUIRES_REAL_TAGS')
