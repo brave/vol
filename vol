@@ -184,16 +184,6 @@ def get_args():
 
     return parser.parse_args()
 
-def validate(args):
-    if getuid() == 0 or getgid() == 0:
-        err('NO_ROOT')
-
-    # TODO: check tags for invalid characters and fail early
-    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
-        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
-    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
-        err('RESERVED_TAG')
-
 ############################## LOW-LEVEL HELPERS ##############################
 
 toList = list
@@ -739,28 +729,42 @@ def main():
         case 'list':
             print_result(list(args.tags, args.snapshot_tags, args.availability_zone))
         case 'attach':
-            if args.tags == '*':
-                err('ATTACH_REQUIRES_REAL_TAGS')
-            if args.mountpoint and not args.fstype:
-                err('MOUNTPOINT_WO_FSTYPE')
-            instance_and_az_match(args.instance_id, args.availability_zone)
-
             extra_args = { 'instance_id': instance_id, 'availability_zone': availability_zone }
             arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint',
                          'fstype', 'no_snapshots', 'volume_initialization_rate']
 
             print_result(attach(**{k: getattr(args, k) for k in arg_names} | extra_args))
         case 'detach':
-            instance_and_az_match(args.instance_id, args.availability_zone)
             print_result(detach(args.tags, availability_zone, args.wipe, args.mountpoint))
         case 'snapshot':
-            if args.tags == '*':
-                err('SNAPSHOT_REQUIRES_REAL_TAGS')
             print_result(snapshot(args.tags, args.snapshot_tags, args.no_clobber, availability_zone))
         case 'clean':
             print_result(clean(args.tags, args.snapshot_tags, args.availability_zone, args.interactive))
         case _:
             err('b0rk')
+
+def validate(args):
+    if getuid() == 0 or getgid() == 0:
+        err('NO_ROOT')
+
+    # TODO: check tags for invalid characters and fail early
+    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
+        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
+    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
+        err('RESERVED_TAG')
+
+    match args.action:
+        case 'attach':
+            if args.tags == '*':
+                err('ATTACH_REQUIRES_REAL_TAGS')
+            if args.mountpoint and not args.fstype:
+                err('MOUNTPOINT_WO_FSTYPE')
+            instance_and_az_match(args.instance_id, args.availability_zone)
+        case 'detach':
+            instance_and_az_match(args.instance_id, args.availability_zone)
+        case 'snapshot':
+            if args.tags == '*':
+                err('SNAPSHOT_REQUIRES_REAL_TAGS')
 
 if __name__ == '__main__':
     main()
