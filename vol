@@ -721,14 +721,12 @@ def main():
 
     validate(args)
 
-    if args.action in ['attach', 'detach', 'snapshot']:
-        instance_id = args.instance_id or get_instance_id()
-        availability_zone = args.availability_zone or get_availability_zone(instance_id)
-
     match args.action:
         case 'list':
             print_result(list(args.tags, args.snapshot_tags, args.availability_zone))
         case 'attach':
+            instance_id = args.instance_id or get_instance_id()
+            availability_zone = args.availability_zone or get_availability_zone(instance_id)
             instance_and_az_match(instance_id, availability_zone)
 
             extra_args = { 'instance_id': instance_id, 'availability_zone': availability_zone }
@@ -737,9 +735,10 @@ def main():
 
             print_result(attach(**{k: getattr(args, k) for k in arg_names} | extra_args))
         case 'detach':
-            instance_and_az_match(instance_id, availability_zone)
+            availability_zone = args.availability_zone or get_availability_zone(args.instance_id or get_instance_id())
             print_result(detach(args.tags, availability_zone, args.wipe, args.mountpoint))
         case 'snapshot':
+            availability_zone = args.availability_zone or get_availability_zone(args.instance_id or get_instance_id())
             print_result(snapshot(args.tags, args.snapshot_tags, args.no_clobber, availability_zone))
         case 'clean':
             print_result(clean(args.tags, args.snapshot_tags, args.availability_zone, args.interactive))
