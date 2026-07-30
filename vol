@@ -571,7 +571,7 @@ def mount(volume_id, mountpoint, fstype):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
-            if run2json(['sudo', 'diskutil', 'info', '-plist', volume_id])['MountPoint'].strip():
+            if run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip():
                 run(['sudo', 'diskutil', 'umount', volume_id])
             run(['sudo', 'diskutil', 'mount', '-mountPoint', mountpoint, volume_id])
         case _:
