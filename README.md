@@ -50,10 +50,9 @@ best performance and consistency (additional costs apply).
   * Require inputs that are easy to provide without extra coding
 * Usable on, or off the node
   * Default to on
-* Easy to deploy (one file + python/boto3)
+* Easy to deploy (one file + python3/boto3)
 * Runs unprivileged (sudo to format/(u)mount)
 * Under 1k lines
-* Only Linux support
 
 ## Disclaimer
 
