@@ -273,7 +273,7 @@ options:
 
 ### sudoers
 
-(requires sudo >=1.9.10 for regular expression support in sudoers)
+Requires sudo >=1.9.10 for regular expression support in sudoers
 
 #### Linux
 
