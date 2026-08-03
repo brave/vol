@@ -415,7 +415,7 @@ def wait_for_volume(volume, valid_states = ['available'], wait_states = [], time
         if timeout_sec <= 0:
             err(text = f'Timed out waiting for {get_volume_desc(volume)} to enter a valid state ({valid_states})')
         else:
-            dbg(f'Waiting for volume {get_volume_desc(volume)}, currently in state {volume_state} for {step_sec}s ' +
+            dbg(f'Waiting for {get_volume_desc(volume)}, currently in state {volume_state} for {step_sec}s ' +
                 f'until it reaches a valid state ({valid_states_str}) ({timeout_sec - step_sec}s left)')
             sleep(step_sec)
             return wait_for_volume(get_volume(get_tag_dict(volume['Tags']), volume['AvailabilityZone']), valid_states, wait_states, timeout_sec - step_sec, step_sec)
