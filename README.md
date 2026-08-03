@@ -288,8 +288,21 @@ EOF
 
 #### macOS
 
+##### user in admin group
+
 ```bash
+sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
+Cmnd_Alias VOL_ERASEDISK = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]* /dev/disk[0-9]*$
+user ALL=(root) NOPASSWD: VOL_ERASEDISK
+EOF
+```
+
+##### user not in admin group
+
+```bash
+sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
 FIXME
+EOF
 ```
 
 ### IAM policy
