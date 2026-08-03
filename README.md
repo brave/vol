@@ -273,6 +273,10 @@ options:
 
 ### sudoers
 
+(requires sudo >=1.9.10 for regular expression support in sudoers)
+
+#### Linux
+
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
 Cmnd_Alias VOL_MKFS = /usr/sbin/mkfs ^-t ext4 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]*$
@@ -282,7 +286,11 @@ user ALL=(root) NOPASSWD: VOL_MKFS, VOL_MOUNT, VOL_UMOUNT
 EOF
 ```
 
-requires sudo >=1.9.10 for regular expression support in sudoers
+#### macOS
+
+```bash
+FIXME
+```
 
 ### IAM policy
 
