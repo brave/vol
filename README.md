@@ -50,10 +50,15 @@ best performance and consistency (additional costs apply).
   * Require inputs that are easy to provide without extra coding
 * Usable on, or off the node
   * Default to on
-* Easy to deploy (one file + python/boto3)
+* Easy to deploy (one file + python3/boto3)
 * Runs unprivileged (sudo to format/(u)mount)
 * Under 1k lines
-* Only Linux support
+
+## Disclaimer
+
+When the `--mountpoint` option is used, volumes determined to be unformatted
+are formatted with no additional confirmation. There is a risk of data loss if
+that detection is (or ever becomes) inaccurate, especially on macOS.
 
 ## Usage
 
@@ -202,7 +207,7 @@ options:
                         None)
   -m, --mountpoint MOUNTPOINT
                         mountpoint, only on <instance-id>, requires util-linux (default: None)
-  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: [])
+  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: {})
   -w, --wipe WIPE       delete the matching volume (default: False)
   -z, --availability-zone AVAILABILITY_ZONE
                         availability zone, required, derived from instance-id if not set (default: None)
@@ -231,7 +236,7 @@ options:
                         None)
   -n, --no-clobber NO_CLOBBER
                         do not overwrite existing snapshots (default: False)
-  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: [])
+  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: {})
   -T, --snapshot-tags SNAPSHOT_TAGS
                         match snapshot tags: t1=v1,...,tN=vN
   -z, --availability-zone AVAILABILITY_ZONE
@@ -264,15 +269,13 @@ options:
 %
 ```
 
-## Disclaimer
-
-When the `--mountpoint` option is used, volumes determined to be unformatted
-are formatted with no additional confirmation. There is a risk of data loss if
-that detection is (or ever becomes) inaccurate.
-
 ## Permissions
 
 ### sudoers
+
+Requires sudo >=1.9.10 for regular expression support in sudoers
+
+#### Linux
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
@@ -283,7 +286,29 @@ user ALL=(root) NOPASSWD: VOL_MKFS, VOL_MOUNT, VOL_UMOUNT
 EOF
 ```
 
-requires sudo >=1.9.10 for regular expression support in sudoers
+#### macOS
+
+##### user in admin group
+
+```bash
+sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
+Cmnd_Alias VOL_ERASE_DISK = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]* /dev/disk[0-9]*$
+user ALL=(root) NOPASSWD: VOL_ERASE_DISK
+EOF
+```
+
+##### user not in admin group
+
+```bash
+sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
+Cmnd_Alias VOL_ERASE_DISK = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]* /dev/disk[0-9]*$
+Cmnd_Alias VOL_MOUNT = /usr/sbin/diskutil ^mount -mountPoint /mnt/point vol-[0-9a-fA-F]*$
+Cmnd_Alias VOL_UMOUNT_DISK = /usr/sbin/diskutil ^umountDisk /dev/disk[0-9]*$
+Cmnd_Alias VOL_UMOUNT_VOLUME = /usr/sbin/diskutil ^umount vol-[0-9a-fA-F]*$
+Cmnd_Alias VOL_UMOUNT_MOUNTPOINT = /usr/sbin/diskutil ^umount /mnt/point$
+user ALL=(root) NOPASSWD: VOL_ERASE_DISK, VOL_MOUNT, VOL_UMOUNT_DISK, VOL_UMOUNT_VOLUME, VOL_UMOUNT_MOUNTPOINT
+EOF
+```
 
 ### IAM policy
 

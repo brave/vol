@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-# Requires: python+boto3; for (u)mount/format: sudo+util-linux
+# Requires: python3 + boto3
+# (u)mount/format require: sudo (+util-linux on linux)
 
-import argparse
-import json
-import random
-import re
-import sys
+import argparse, json, random, re, subprocess, sys
 
 if sys.version_info < (3, 11):
     from datetime import timezone
@@ -18,9 +15,9 @@ from datetime import date, datetime, MINYEAR
 from dateutil.parser import isoparse
 from hashlib import sha256
 from operator import itemgetter
+from platform import system
 from os import getgid, getuid, makedirs
 from os.path import exists
-from subprocess import CalledProcessError, run
 from textwrap import dedent
 from time import sleep
 from urllib.request import Request, urlopen
@@ -96,10 +93,10 @@ def get_args():
                     --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \\
                     --snapshot-tags type=bb.public.workspace,branch=master,platform=linux,arch=x64 \\
                     --size 256 \\
-                    --mountpoint /home/ubuntu/workspace
+                    --mountpoint /mnt/point
             ''',
             (
-                (['-f', '--fstype'], {'default': 'ext4', 'help': 'fs type to use with --mountpoint if the volume is not formatted'}),
+                (['-f', '--fstype'], {'default': 'ext4' if system() != 'Darwin' else 'APFS', 'help': 'fs type to use with --mountpoint if the volume is not formatted'}),
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default'}),
                 (['-k', '--kms-key-id'], {'help': 'KMS key to use for volume encryption, otherwise default'}),
                 (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux, create if doesn\'t exist'}),
@@ -124,12 +121,12 @@ def get_args():
 
                 %(prog)s \\
                     --tags type=bb.pr.workspace,pr=123,platform=linux,arch=x64 \\
-                    --mountpoint /home/ubuntu/workspace
+                    --mountpoint /mnt/point
             ''',
             (
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
                 (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux'}),
-                (['-t', '--tags'], {'type': tag_type, 'default': [], 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-t', '--tags'], {'type': tag_type, 'default': {}, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
                 (['-w', '--wipe'], {'type': bool, 'default': False, 'help': 'delete the matching volume'}),
                 (['-z', '--availability-zone'], {'help': 'availability zone, required, derived from instance-id if not set'}),
             ),
@@ -150,7 +147,7 @@ def get_args():
             (
                 (['-i', '--instance-id'], {'help': 'instance id, current instance by default, used to derive az if not set'}),
                 (['-n', '--no-clobber'], {'type': bool, 'default': False, 'help': 'do not overwrite existing snapshots'}),
-                (['-t', '--tags'], {'type': tag_type, 'default': [], 'help': 'match volume tags: t1=v1,...,tN=vN'}),
+                (['-t', '--tags'], {'type': tag_type, 'default': {}, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
                 (['-T', '--snapshot-tags'], {'type': tag_type, 'required': True, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
                 (['-z', '--availability-zone'], {'help': 'availability zone, required, derived from instance-id if not set'}),
             ),
@@ -191,6 +188,20 @@ def get_args():
 
 toList = list
 
+def run(cmd, **kw):
+    try:
+        command = ['sudo'] + cmd if kw.get('sudo') else cmd
+        options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k != 'sudo'}
+        return subprocess.run(command, **options)
+    except subprocess.CalledProcessError as e:
+        err(text = f'Command {cmd} failed with exit status {e.returncode}:\n{e.stderr}')
+
+def run2json(cmd):
+    return json.loads(run(['plutil', '-convert', 'json', '-o', '-', '-'], input=run(cmd).stdout).stdout)
+
+def is_mac_admin():
+    return run(['dseditgroup', '-o', 'checkmember', 'admin'], check=False).returncode == 0
+
 # TODO: enable choosing max verbosity on the command line
 def msg(msg, log_level = 'info'):
     say = lambda m: print(m, file=sys.stderr)
@@ -216,12 +227,14 @@ def err(template = None, text = None):
             'ATTACH_REQUIRES_REAL_TAGS': 'The attach action may create volumes, so it requires non-wildcard tags',
             'AZ_DOES_NOT_MATCH_INSTANCE': 'The specified availability zone does not match the instance',
             'MOUNTPOINT_WO_FSTYPE': 'If a mountpoint is specified, the filesystem type also needs to be specified',
+            'MULTIPLE_EMPTY_EBS': 'Found multiple empty EBS volumes attached, expected one',
             'NO_AVAILABLE_DEVICES': 'All available device names are in use on the target instance',
+            'NO_EMPTY_EBS': 'Could not find a matching EBS volume (neither formatted, nor empty)',
             'NO_ROOT': 'Please don\'t run this script as root, it will call sudo if necessary ((u)mount/format)',
             'NO_TAGS_SPECIFIED': 'This action requires --tags, or --snapshot-tags, or both',
             'NO_VOLUMES': 'No volumes found with the specified tags',
             'RESERVED_TAG': f'Tags starting with {PROG}. are reserved for internal use',
-            'SNAPSHOT_ALREADY_EXISTS': 'A snapshot with tags the specified tags already exists',
+            'SNAPSHOT_ALREADY_EXISTS': 'A snapshot with the specified tags already exists',
             'SNAPSHOT_REQUIRES_REAL_TAGS': 'The snapshot action creates snapshots, so it requires non-wildcard snapshot tags',
             'TIMEOUT_PENDING_INSTANCE': 'Timed out waiting for a pending instance to become available',
             'TOO_MANY_VOLUMES': 'The number of volumes with the specified tags exceeds 1',
@@ -264,8 +277,25 @@ def get_tag_dict(tags):
 
     return {t['Key']: t['Value'] for t in tags}
 
-def get_disk(volume_id):
-    return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
+def get_disk(volume_id, fail = True):
+    match system():
+        case 'Darwin':
+            disk_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
+            match disk_info.returncode:
+                case 0:
+                    return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=disk_info.stdout).stdout.strip()
+                case _:
+                    # TODO: filter by diskutil activity for a tighter match
+                    candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
+                    candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
+                    empty_ebs_disks = [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)]
+                    match empty_ebs_disks, fail:
+                        case [], True: err('NO_EMPTY_EBS')
+                        case [], False: return None
+                        case [dev], _: return dev
+                        case _: err('MULTIPLE_EMPTY_EBS')
+        case _:
+            return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
 def get_device_name(volume, instance_id):
     valid_letters = [chr(c) for c in range(ord('b'), ord('z') + 1)]
@@ -280,6 +310,25 @@ def get_device_name(volume, instance_id):
         return f'/dev/xvd{random.choice(available_letters)}'
     else:
         err('NO_AVAILABLE_DEVICES')
+
+def is_formatted(disk):
+    if disk and exists(disk):
+        match system():
+            case 'Darwin':
+                p = run2json(['diskutil', 'info', '-plist', disk])['Content']
+            case _:
+                p = run(['lsblk', '-n', '-o', 'fstype', disk]).stdout
+        return bool(p.strip())
+    else:
+        err(text = f'Disk {disk} does not exist')
+
+def is_empty_ebs(disk_info):
+    return ( # TODO: could also match on TotalSize
+        disk_info['VolumeName'] == '' and
+        disk_info['VolumeSize'] == 0 and
+        disk_info['Content'] == '' and
+        disk_info['MediaName'] == 'Amazon Elastic Block Store'
+    )
 
 def get_volumes(tags, availability_zone = None, only_active = True):
     dbg(f'Getting volumes with tags {get_tag_string(tags)}' +
@@ -309,30 +358,27 @@ def get_snapshots(snapshot_tags):
     dbg(f'Getting snapshots with tags {get_tag_string(snapshot_tags)}')
     return client('ec2').describe_snapshots(Filters=get_tag_filters(snapshot_tags))['Snapshots'] if snapshot_tags else []
 
-def get_instance_id():
-    def valid_instance_id(instance_id):
-        if re.fullmatch(r'i-[0-9a-f]{8,}', instance_id):
-            return instance_id
-        raise ValueError(f'Invalid instance id: {instance_id}')
+def valid_instance_id(instance_id):
+    if re.fullmatch(r'i-[0-9a-f]{8,}', instance_id):
+        return instance_id
+    raise ValueError(f'Invalid instance id: {instance_id}')
 
+def get_instance_id():
     try:
         dbg('Getting instance id from /var/lib/cloud/data/instance-id')
         with open('/var/lib/cloud/data/instance-id', 'r') as f:
             return valid_instance_id(f.read().strip())
     except Exception:
         dbg('Failed to get instance id from /var/lib/cloud/data/instance-id')
-        try:
-            dbg('Getting instance id from IMDS')
-            imds='http://169.254.169.254/latest'
-            read=lambda r: r.read(512).decode('utf-8')
+        dbg('Getting instance id from IMDS')
+        imds='http://169.254.169.254/latest'
+        read=lambda r: r.read(512).decode('utf-8')
 
-            token_req = Request(f'{imds}/api/token', method='PUT', headers={'X-aws-ec2-metadata-token-ttl-seconds': '900'})
-            with urlopen(token_req, timeout=10) as resp:
-                id_req = Request(f'{imds}/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': read(resp)})
-                with urlopen(id_req, timeout=10) as resp2:
-                    return valid_instance_id(read(resp2))
-        except Exception as e:
-            err(text=f'Failed to get instance id from IMDS: {e}')
+        token_req = Request(f'{imds}/api/token', method='PUT', headers={'X-aws-ec2-metadata-token-ttl-seconds': '900'})
+        with urlopen(token_req, timeout=10) as resp:
+            id_req = Request(f'{imds}/meta-data/instance-id', headers={'X-aws-ec2-metadata-token': read(resp)})
+            with urlopen(id_req, timeout=10) as resp2:
+                return valid_instance_id(read(resp2))
 
 def get_instance_state(instance_id):
     dbg(f'Getting instance state for {instance_id}')
@@ -348,6 +394,17 @@ def update_timestamp(volume_id):
         Resources=[volume_id],
         Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
+def wait_for_disk(volume_id):
+    for i in range(10):
+        disk = get_disk(volume_id, fail=False)
+        if disk and exists(disk):
+            return disk
+        else:
+            dbg(f'Waiting for the disk to become available')
+            sleep(5)
+
+    err(text = f'Disk{" " + disk if disk else ""} for volume {volume_id} is not available')
+
 def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 600, step_sec = 10):
     volume_state = get_volume_state(volume)
     valid_states_str = ', '.join(valid_states)
@@ -358,7 +415,7 @@ def wait_for_volume(volume, valid_states = ['available'], wait_states = [], time
         if timeout_sec <= 0:
             err(text = f'Timed out waiting for {get_volume_desc(volume)} to enter a valid state ({valid_states})')
         else:
-            dbg(f'Waiting for volume {get_volume_desc(volume)}, currently in state {volume_state} for {step_sec}s ' +
+            dbg(f'Waiting for {get_volume_desc(volume)}, currently in state {volume_state} for {step_sec}s ' +
                 f'until it reaches a valid state ({valid_states_str}) ({timeout_sec - step_sec}s left)')
             sleep(step_sec)
             return wait_for_volume(get_volume(get_tag_dict(volume['Tags']), volume['AvailabilityZone']), valid_states, wait_states, timeout_sec - step_sec, step_sec)
@@ -492,45 +549,39 @@ def delete_snapshot(snapshot):
     return client('ec2').delete_snapshot(SnapshotId=snapshot['SnapshotId'])
 
 def format_volume(volume_id, fstype):
-    try:
-        device = get_disk(volume_id)
-        msg(f'Formatting {device} ({volume_id})')
-        run(['sudo', 'mkfs', '-t', fstype, device], capture_output=True, check=True)
-    except CalledProcessError as e:
-        err(f'mkfs failed with exit code {e.returncode}: {e.stderr.decode()}')
+    disk = get_disk(volume_id)
+    msg(f'Formatting {disk} ({volume_id})')
+    match system():
+        case 'Darwin':
+            # On macOS, we rely on the disk name matching the EBS volume ID
+            run(['diskutil', 'eraseDisk', '-noEFI', fstype, volume_id, disk], sudo=True)
+            run(['diskutil', 'umountDisk', disk], sudo=not is_mac_admin())
+        case _:
+            run(['mkfs', '-t', fstype, disk], sudo=True)
 
 def mount(volume_id, mountpoint, fstype):
-    device = get_disk(volume_id)
+    disk = wait_for_disk(volume_id)
 
-    try:
-        for i in range(10):
-            if exists(device):
-                break
-            else:
-                dbg(f'Waiting for {device} to become available')
-                sleep(10)
+    if not is_formatted(disk):
+        format_volume(volume_id, fstype)
 
-        p = run(['lsblk', '-n', '-o', 'fstype', device], capture_output=True, check=True)
-        if not p.stdout.decode().strip():
-            format_volume(volume_id, fstype)
-    except CalledProcessError as e:
-        err(f'lsblk failed with exit code {e.returncode}: {e.stderr.decode()}')
-
-    msg(f'Mounting {device} ({volume_id}) at {mountpoint}')
+    msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
-
-    try:
-        cmd = ['sudo', 'mount', '-t', fstype, '-o', 'noatime', device, mountpoint]
-        run(cmd, capture_output=True, check=True)
-    except CalledProcessError as e:
-        err(f'mount failed with exit code {e.returncode}: {e.stderr.decode()}')
+    match system():
+        case 'Darwin':
+            if run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip():
+                run(['diskutil', 'umount', volume_id], sudo=not is_mac_admin())
+            run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
+        case _:
+            run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
 def umount(mountpoint):
     msg(f'Unmounting {mountpoint}')
-    try:
-        run(['sudo', 'umount', mountpoint], capture_output=True, check=True)
-    except CalledProcessError as e:
-        err(f'umount failed with exit code {e.returncode}: {e.stderr.decode()}')
+    match system():
+        case 'Darwin':
+            run(['diskutil', 'umount', mountpoint], sudo=not is_mac_admin())
+        case _:
+            run(['umount', mountpoint], sudo=True)
 
 def instance_and_az_match(instance_id, availability_zone):
     if instance_id and availability_zone:
@@ -668,31 +719,15 @@ def clean(tags, snapshot_tags, availability_zone, interactive):
 def main():
     args = get_args()
 
-    # Fail if executed as root
-    if getuid() == 0 or getgid() == 0:
-        err('NO_ROOT')
+    validate(args)
 
-    # TODO: check tags for invalid characters and fail early
-    # Fail if reserved tags are used
-    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
-        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
-    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
-        err('RESERVED_TAG')
-
-    if args.action in ['attach', 'detach', 'snapshot']:
-        instance_id = args.instance_id or get_instance_id()
-        availability_zone = args.availability_zone or get_availability_zone(instance_id)
-
-    # Execute the action
     match args.action:
         case 'list':
             print_result(list(args.tags, args.snapshot_tags, args.availability_zone))
         case 'attach':
-            if args.tags == '*':
-                err('ATTACH_REQUIRES_REAL_TAGS')
-            if args.mountpoint and not args.fstype:
-                err('MOUNTPOINT_WO_FSTYPE')
-            instance_and_az_match(args.instance_id, args.availability_zone)
+            instance_id = args.instance_id or get_instance_id()
+            availability_zone = args.availability_zone or get_availability_zone(instance_id)
+            instance_and_az_match(instance_id, availability_zone)
 
             extra_args = { 'instance_id': instance_id, 'availability_zone': availability_zone }
             arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint',
@@ -700,17 +735,35 @@ def main():
 
             print_result(attach(**{k: getattr(args, k) for k in arg_names} | extra_args))
         case 'detach':
-            instance_and_az_match(args.instance_id, args.availability_zone)
+            availability_zone = args.availability_zone or get_availability_zone(args.instance_id or get_instance_id())
             print_result(detach(args.tags, availability_zone, args.wipe, args.mountpoint))
         case 'snapshot':
-            if args.tags == '*':
-                err('SNAPSHOT_REQUIRES_REAL_TAGS')
-
+            availability_zone = args.availability_zone or get_availability_zone(args.instance_id or get_instance_id())
             print_result(snapshot(args.tags, args.snapshot_tags, args.no_clobber, availability_zone))
         case 'clean':
             print_result(clean(args.tags, args.snapshot_tags, args.availability_zone, args.interactive))
         case _:
             err('b0rk')
+
+def validate(args):
+    if getuid() == 0 or getgid() == 0:
+        err('NO_ROOT')
+
+    # TODO: check tags for invalid characters and fail early
+    check_tags = (args.tags if "tags" in args and args.tags and args.tags != '*' else {}) |\
+        (args.snapshot_tags if "snapshot_tags" in args and args.snapshot_tags and args.snapshot_tags != '*' else {})
+    if next((k for k, v in check_tags.items() if k.startswith(f'{PROG}.')), None):
+        err('RESERVED_TAG')
+
+    match args.action:
+        case 'attach':
+            if args.tags == '*':
+                err('ATTACH_REQUIRES_REAL_TAGS')
+            if args.mountpoint and not args.fstype:
+                err('MOUNTPOINT_WO_FSTYPE')
+        case 'snapshot':
+            if args.tags == '*':
+                err('SNAPSHOT_REQUIRES_REAL_TAGS')
 
 if __name__ == '__main__':
     main()
