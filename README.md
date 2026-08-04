@@ -207,7 +207,7 @@ options:
                         None)
   -m, --mountpoint MOUNTPOINT
                         mountpoint, only on <instance-id>, requires util-linux (default: None)
-  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: [])
+  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: {})
   -w, --wipe WIPE       delete the matching volume (default: False)
   -z, --availability-zone AVAILABILITY_ZONE
                         availability zone, required, derived from instance-id if not set (default: None)
@@ -236,7 +236,7 @@ options:
                         None)
   -n, --no-clobber NO_CLOBBER
                         do not overwrite existing snapshots (default: False)
-  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: [])
+  -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN (default: {})
   -T, --snapshot-tags SNAPSHOT_TAGS
                         match snapshot tags: t1=v1,...,tN=vN
   -z, --availability-zone AVAILABILITY_ZONE
