@@ -320,7 +320,7 @@ def is_formatted(disk):
                 p = run(['lsblk', '-n', '-o', 'fstype', disk]).stdout
         return bool(p.strip())
     else:
-        err(text = 'Disk {disk} does not exist')
+        err(text = f'Disk {disk} does not exist')
 
 def is_empty_ebs(disk_info):
     return ( # TODO: could also match on TotalSize
