@@ -4,7 +4,7 @@
 
 `vol` is a tool to manage EBS volumes and snapshots using only tags. It can be
 invoked from the node that would use the volume (which enables format/(u)mount
-features), or any other node.
+features), or any other Linux/macOS node.
 
 User actions take a set of tags that should uniquely identify a volume and/or
 snapshot.
