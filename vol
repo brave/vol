@@ -192,6 +192,7 @@ toList = list
 def run(cmd, **kw):
     try:
         command = ['sudo'] + cmd if kw.get('sudo') else cmd
+        dbg(f'Executing: {command}')
         options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k != 'sudo'}
         return subprocess.run(command, **options)
     except subprocess.CalledProcessError as e:
@@ -570,8 +571,9 @@ def mount(volume_id, mountpoint, fstype):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
-            if run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip():
-                run(['diskutil', 'umount', volume_id], sudo=not is_mac_admin())
+            existing_mountpoint = run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip()
+            if existing_mountpoint:
+                umount(existing_mountpoint)
             run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
         case _:
             run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
