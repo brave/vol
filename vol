@@ -18,7 +18,7 @@ from hashlib import sha256
 from operator import itemgetter
 from platform import system
 from os import getgid, getuid, makedirs
-from os.path import exists
+from os.path import exists, ismount
 from textwrap import dedent
 from time import sleep
 from urllib.request import Request, urlopen
@@ -561,9 +561,11 @@ def format_volume(volume_id, fstype):
         case _:
             run(['mkfs', '-t', fstype, disk], sudo=True)
 
-def mount(volume_id, mountpoint, fstype):
-    disk = wait_for_disk(volume_id)
+def mount(volume_id, mountpoint, fstype, retry = 2):
+    if retry == 0:
+        err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
 
+    disk = wait_for_disk(volume_id)
     if not is_formatted(disk):
         format_volume(volume_id, fstype)
 
@@ -575,6 +577,9 @@ def mount(volume_id, mountpoint, fstype):
             if existing_mountpoint:
                 umount(existing_mountpoint)
             run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
+            if not ismount(mountpoint):
+                sleep(2)
+                mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
             run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
