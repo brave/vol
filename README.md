@@ -303,9 +303,8 @@ EOF
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
 Cmnd_Alias VOL_ERASE_DISK = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
 Cmnd_Alias VOL_MOUNT = /usr/sbin/diskutil ^mount -mountPoint /mnt/point vol-[0-9a-fA-F]+$
-Cmnd_Alias VOL_UMOUNT_DISK = /usr/sbin/diskutil ^umountDisk /dev/disk[1-9][0-9]*$
-Cmnd_Alias VOL_UMOUNT_MOUNTPOINT = /usr/sbin/diskutil ^umount /mnt/point$
-user ALL=(root) NOPASSWD: VOL_ERASE_DISK, VOL_MOUNT, VOL_UMOUNT_DISK, VOL_UMOUNT_MOUNTPOINT
+Cmnd_Alias VOL_UMOUNT = /usr/sbin/diskutil ^umount /mnt/point$
+user ALL=(root) NOPASSWD: VOL_ERASE_DISK, VOL_MOUNT, VOL_UMOUNT
 EOF
 ```
 
