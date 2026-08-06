@@ -560,7 +560,7 @@ def format_volume(volume_id, fstype):
             run(['mkfs', '-t', fstype, disk], sudo=True)
 
 def mount(volume_id, mountpoint, fstype, retry = 5):
-    if retry == 0:
+    if retry <= 0:
         err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
 
     disk = wait_for_disk(volume_id)
