@@ -570,7 +570,6 @@ def mount(volume_id, mountpoint, fstype, retry = 2):
     if not is_formatted(disk):
         format_volume(volume_id, fstype)
 
-    msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
@@ -580,9 +579,11 @@ def mount(volume_id, mountpoint, fstype, retry = 2):
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
             if not ismount(mountpoint):
+                msg(f'{mountpoint} is not a mountpoint, retrying')
                 sleep(2)
                 mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
+            msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
 def umount(mountpoint):
