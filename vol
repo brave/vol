@@ -576,7 +576,7 @@ def mount(volume_id, mountpoint, fstype, retry = 2):
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
             if not ismount(mountpoint):
-                msg(f'Path {mountpoint} is not a mountpoint (likely automounted at /Volumes)')
+                msg(f'Path {mountpoint} is not a mountpoint (likely automounted at /Volumes/{volume_id})')
                 sleep(2)
                 mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
