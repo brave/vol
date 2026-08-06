@@ -192,8 +192,6 @@ toList = list
 def run(cmd, **kw):
     try:
         command = ['sudo'] + cmd if kw.get('sudo') else cmd
-        if cmd and cmd[0] != 'plutil':
-            dbg(f'Executing: {command}')
         options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k != 'sudo'}
         return subprocess.run(command, **options)
     except subprocess.CalledProcessError as e:
