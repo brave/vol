@@ -281,10 +281,10 @@ Adjust `user` and `/mnt/point` accordingly.
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_MKFS = /usr/sbin/mkfs ^-t ext4 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]+$
+Cmnd_Alias VOL_FORMAT = /usr/sbin/mkfs ^-t ext4 /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]+$
 Cmnd_Alias VOL_MOUNT = /usr/bin/mount ^-t ext4 -o noatime /dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_vol[0-9a-fA-F]+ /mnt/point$
 Cmnd_Alias VOL_UMOUNT = /usr/bin/umount /mnt/point
-user ALL=(root) NOPASSWD: VOL_MKFS, VOL_MOUNT, VOL_UMOUNT
+user ALL=(root) NOPASSWD: VOL_FORMAT, VOL_MOUNT, VOL_UMOUNT
 EOF
 ```
 
@@ -294,8 +294,8 @@ EOF
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_ERASE = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
-user ALL=(root) NOPASSWD: VOL_ERASE
+Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
+user ALL=(root) NOPASSWD: VOL_FORMAT
 EOF
 ```
 
@@ -303,10 +303,10 @@ EOF
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_ERASE = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
+Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
 Cmnd_Alias VOL_MOUNT = /usr/sbin/diskutil ^mount -mountPoint /mnt/point vol-[0-9a-fA-F]+$
 Cmnd_Alias VOL_UMOUNT = /usr/sbin/diskutil ^umount /mnt/point$, /usr/sbin/diskutil ^umount /Volumes/vol-[0-9a-fA-F]+$
-user ALL=(root) NOPASSWD: VOL_ERASE, VOL_MOUNT, VOL_UMOUNT
+user ALL=(root) NOPASSWD: VOL_FORMAT, VOL_MOUNT, VOL_UMOUNT
 EOF
 ```
 
