@@ -18,7 +18,7 @@ from hashlib import sha256
 from operator import itemgetter
 from platform import system
 from os import getgid, getuid, makedirs
-from os.path import exists
+from os.path import exists, ismount
 from textwrap import dedent
 from time import sleep
 from urllib.request import Request, urlopen
@@ -556,24 +556,31 @@ def format_volume(volume_id, fstype):
         case 'Darwin':
             # On macOS, we rely on the disk name matching the EBS volume ID
             run(['diskutil', 'eraseDisk', '-noEFI', fstype, volume_id, disk], sudo=True)
-            run(['diskutil', 'umountDisk', disk], sudo=not is_mac_admin())
         case _:
             run(['mkfs', '-t', fstype, disk], sudo=True)
 
-def mount(volume_id, mountpoint, fstype):
-    disk = wait_for_disk(volume_id)
+def mount(volume_id, mountpoint, fstype, retry = 5):
+    if retry == 0:
+        err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
 
+    disk = wait_for_disk(volume_id)
     if not is_formatted(disk):
         format_volume(volume_id, fstype)
 
-    msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
-            if run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip():
-                run(['diskutil', 'umount', volume_id], sudo=not is_mac_admin())
+            existing_mountpoint = run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip()
+            if existing_mountpoint:
+                umount(existing_mountpoint)
+            msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
+            if not ismount(mountpoint):
+                msg(f'Path {mountpoint} is not a mountpoint (likely automounted at /Volumes/{volume_id})')
+                sleep(2)
+                mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
+            msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
 def umount(mountpoint):
