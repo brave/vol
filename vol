@@ -568,11 +568,11 @@ def mount(volume_id, mountpoint, fstype, size, retry = 5):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
-            existing_mountpoint = run2json(['diskutil', 'info', '-plist', volume_id])['MountPoint'].strip()
+            existing_mountpoint = run2json(['diskutil', 'info', '-plist', disk])['MountPoint'].strip()
             if existing_mountpoint:
                 umount(existing_mountpoint)
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
-            run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
+            run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
             if ismount(mountpoint):
                 if run2json(['diskutil', 'info', '-plist', disk])['VolumeName'].strip() == '':
                     run(['diskutil', 'rename', disk, volume_id])
