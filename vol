@@ -292,8 +292,8 @@ def get_disk(volume_id, fail = True):
                 match empty_ebs_candidates, unlabeled_ebs_candidates, fail:
                     case [], [], True: err('NO_MATCHING_EBS')
                     case [], [], False: return None
-                    case [dev], _: return dev
-                    case [], [dev]: run(['diskutil', 'rename', dev, volume_id]); return dev
+                    case [dev], _, _: return dev
+                    case [], [dev], _: run(['diskutil', 'rename', dev, volume_id]); return dev
                     case _: err('MULTIPLE_MATCHING_EBS')
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
