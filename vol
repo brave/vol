@@ -329,7 +329,6 @@ def is_ebs(disk_info):
             disk_info['MountPoint'] == '' and
             disk_info['VolumeName'] == '' and
             disk_info['VolumeSize'] == 0)
-)
 
 def is_empty_ebs(disk_info):
     return is_ebs(disk_info) and disk_info['Content'] == ''
