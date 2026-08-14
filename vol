@@ -292,8 +292,7 @@ def get_disk(volume_id, size, fail = True):
                 match empty_ebs_candidates, unlabeled_ebs_candidates, fail:
                     case [], [], True: err('NO_MATCHING_EBS')
                     case [], [], False: return None
-                    case [dev], _, _: return dev
-                    case [], [dev], _: run(['diskutil', 'rename', dev, volume_id]); return dev
+                    case [dev], _, _ | case [], [dev], _: return dev
                     case _: err('MULTIPLE_MATCHING_EBS')
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
@@ -580,7 +579,10 @@ def mount(volume_id, mountpoint, fstype, size, retry = 5):
                 umount(existing_mountpoint)
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, volume_id], sudo=not is_mac_admin())
-            if not ismount(mountpoint):
+            if ismount(mountpoint):
+                if run2json(['diskutil', 'info', '-plist', disk])['VolumeName'].strip() == '':
+                    run(['diskutil', 'rename', disk, volume_id])
+            else:
                 msg(f'Path {mountpoint} is not a mountpoint (likely automounted at /Volumes/{volume_id})')
                 sleep(2)
                 mount(volume_id, mountpoint, fstype, size, retry - 1)
