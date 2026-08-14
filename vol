@@ -278,7 +278,7 @@ def get_tag_dict(tags):
 
     return {t['Key']: t['Value'] for t in tags}
 
-def get_disk(volume_id, fail = True):
+def get_disk(volume_id, size, fail = True):
     match system():
         case 'Darwin':
             disk_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
@@ -287,8 +287,8 @@ def get_disk(volume_id, fail = True):
             else:
                 candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                 candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
-                empty_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)]
-                unlabeled_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_unlabeled_ebs(d)]
+                empty_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d, size)]
+                unlabeled_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_unlabeled_ebs(d, size)]
                 match empty_ebs_candidates, unlabeled_ebs_candidates, fail:
                     case [], [], True: err('NO_MATCHING_EBS')
                     case [], [], False: return None
@@ -323,18 +323,18 @@ def is_formatted(disk):
     else:
         err(text = f'Disk {disk} does not exist')
 
-def is_ebs(disk_info):
-    # TODO: could also match on TotalSize
-    return (disk_info['MediaName'] == 'Amazon Elastic Block Store' and
+def is_candidate_ebs(disk_info, size):
+    return (disk_info['IOKitSize'] == size * 1024**3 and
+            disk_info['MediaName'] == 'Amazon Elastic Block Store' and
             disk_info['MountPoint'] == '' and
             disk_info['VolumeName'] == '' and
             disk_info['VolumeSize'] == 0)
 
-def is_empty_ebs(disk_info):
-    return is_ebs(disk_info) and disk_info['Content'] == ''
+def is_empty_ebs(disk_info, size):
+    return is_candidate_ebs(disk_info) and disk_info['Content'] == ''
 
-def is_unlabeled_ebs(disk_info):
-    return is_ebs(disk_info) and disk_info['Content'] == 'GUID_partition_scheme'
+def is_unlabeled_ebs(disk_info, size):
+    return is_candidate_ebs(disk_info) and disk_info['Content'] == 'GUID_partition_scheme'
 
 def get_volumes(tags, availability_zone = None, only_active = True):
     dbg(f'Getting volumes with tags {get_tag_string(tags)}' +
@@ -400,9 +400,9 @@ def update_timestamp(volume_id):
         Resources=[volume_id],
         Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
-def wait_for_disk(volume_id):
+def wait_for_disk(volume_id, size):
     for i in range(10):
-        disk = get_disk(volume_id, fail=False)
+        disk = get_disk(volume_id, size, fail=False)
         if disk and exists(disk):
             return disk
         else:
@@ -554,8 +554,8 @@ def delete_snapshot(snapshot):
     msg(f'Deleting snapshot {snapshot["SnapshotId"]} with tags {get_tag_string(snapshot["Tags"])}')
     return client('ec2').delete_snapshot(SnapshotId=snapshot['SnapshotId'])
 
-def format_volume(volume_id, fstype):
-    disk = get_disk(volume_id)
+def format_volume(volume_id, fstype, size):
+    disk = get_disk(volume_id, size)
     msg(f'Formatting {disk} ({volume_id})')
     match system():
         case 'Darwin':
@@ -564,13 +564,13 @@ def format_volume(volume_id, fstype):
         case _:
             run(['mkfs', '-t', fstype, disk], sudo=True)
 
-def mount(volume_id, mountpoint, fstype, retry = 5):
+def mount(volume_id, mountpoint, fstype, size, retry = 5):
     if retry <= 0:
         err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
 
-    disk = wait_for_disk(volume_id)
+    disk = wait_for_disk(volume_id, size)
     if not is_formatted(disk):
-        format_volume(volume_id, fstype)
+        format_volume(volume_id, fstype, size)
 
     makedirs(mountpoint, exist_ok=True)
     match system():
@@ -583,7 +583,7 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
             if not ismount(mountpoint):
                 msg(f'Path {mountpoint} is not a mountpoint (likely automounted at /Volumes/{volume_id})')
                 sleep(2)
-                mount(volume_id, mountpoint, fstype, retry - 1)
+                mount(volume_id, mountpoint, fstype, size, retry - 1)
         case _:
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
@@ -669,7 +669,7 @@ def attach(tags, snapshot_tags, instance_id, availability_zone, wipe, size, kms_
     result = attach_volume(volume, instance_id)
 
     if mountpoint:
-        mount(volume['VolumeId'], mountpoint, fstype)
+        mount(volume['VolumeId'], mountpoint, fstype, size)
 
     return result
 
