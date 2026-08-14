@@ -46,7 +46,7 @@ When the `--mountpoint` option is used, volumes determined to be unformatted
 are formatted with no additional confirmation. There is a risk of data loss if
 that detection is (or ever becomes) inaccurate, especially on macOS.
 
-On macOS, an existing EBS volume may also be mislabeled and misused.
+On macOS, an existing EBS volume may also be mislabeled/misused.
 
 Use at your own risk.
 
