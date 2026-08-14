@@ -288,8 +288,8 @@ def get_disk(volume_id, fail = True):
                 candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                 candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
                 empty_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d)]
-                unlabelled_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_unlabelled_ebs(d)]
-                match empty_ebs_candidates, unlabelled_ebs_candidates, fail:
+                unlabeled_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_unlabeled_ebs(d)]
+                match empty_ebs_candidates, unlabeled_ebs_candidates, fail:
                     case [], [], True: err('NO_MATCHING_EBS')
                     case [], [], False: return None
                     case [dev], _: return dev
@@ -334,7 +334,7 @@ def is_ebs(disk_info):
 def is_empty_ebs(disk_info):
     return is_ebs(disk_info) and disk_info['Content'] == ''
 
-def is_unlabelled_ebs(disk_info):
+def is_unlabeled_ebs(disk_info):
     return is_ebs(disk_info) and disk_info['Content'] == 'GUID_partition_scheme'
 
 def get_volumes(tags, availability_zone = None, only_active = True):
