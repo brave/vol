@@ -278,6 +278,14 @@ def get_tag_dict(tags):
 
     return {t['Key']: t['Value'] for t in tags}
 
+def is_candidate_ebs(disk_info, size):
+    return (disk_info['Content'] in ['', 'GUID_partition_scheme'] and
+            disk_info['IOKitSize'] == size * 1024**3 and
+            disk_info['MediaName'] == 'Amazon Elastic Block Store' and
+            disk_info['MountPoint'] == '' and
+            disk_info['VolumeName'] == '' and
+            disk_info['VolumeSize'] == 0)
+
 def get_disk(volume_id, size, fail = True):
     match system():
         case 'Darwin':
@@ -287,12 +295,11 @@ def get_disk(volume_id, size, fail = True):
             else:
                 candidates = run2json(['diskutil', 'list', '-plist', 'external', 'physical'])['WholeDisks']
                 candidates_info = [run2json(['diskutil', 'info', '-plist', d]) for d in candidates]
-                empty_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_empty_ebs(d, size)]
-                unlabeled_ebs_candidates = [d['DeviceNode'] for d in candidates_info if is_unlabeled_ebs(d, size)]
-                match empty_ebs_candidates, unlabeled_ebs_candidates, fail:
-                    case [], [], True: err('NO_MATCHING_EBS')
-                    case [], [], False: return None
-                    case [dev], _, _ | case [], [dev], _: return dev
+                candidates_ebs = [d['DeviceNode'] for d in candidates_info if is_candidate_ebs(d, size)]
+                match candidates_ebs, fail:
+                    case [], True: err('NO_MATCHING_EBS')
+                    case [], False: return None
+                    case [dev], _: return dev
                     case _: err('MULTIPLE_MATCHING_EBS')
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
@@ -321,19 +328,6 @@ def is_formatted(disk):
         return bool(p.strip())
     else:
         err(text = f'Disk {disk} does not exist')
-
-def is_candidate_ebs(disk_info, size):
-    return (disk_info['IOKitSize'] == size * 1024**3 and
-            disk_info['MediaName'] == 'Amazon Elastic Block Store' and
-            disk_info['MountPoint'] == '' and
-            disk_info['VolumeName'] == '' and
-            disk_info['VolumeSize'] == 0)
-
-def is_empty_ebs(disk_info, size):
-    return is_candidate_ebs(disk_info, size) and disk_info['Content'] == ''
-
-def is_unlabeled_ebs(disk_info, size):
-    return is_candidate_ebs(disk_info, size) and disk_info['Content'] == 'GUID_partition_scheme'
 
 def get_volumes(tags, availability_zone = None, only_active = True):
     dbg(f'Getting volumes with tags {get_tag_string(tags)}' +
