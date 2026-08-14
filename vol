@@ -289,7 +289,7 @@ def is_candidate_ebs(disk_info, size):
 def get_disk(volume_id, size, fail = True):
     match system():
         case 'Darwin':
-            disk_info = run(['diskutil', 'info', volume_id], check=False)
+            disk_info = run(['diskutil', 'info', '-plist', volume_id], check=False)
             if disk_info.returncode == 0:
                 return run(['plutil', '-extract', 'DeviceNode', 'raw', '-'], input=disk_info.stdout).stdout.strip()
             else:
