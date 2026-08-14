@@ -48,7 +48,7 @@ that detection is (or ever becomes) inaccurate, especially on macOS.
 
 On macOS, an existing EBS volume may also be mislabeled/misused.
 
-Use at your own risk.
+Use at your own risk, especially on macOS.
 
 ## Goals and scope
 
