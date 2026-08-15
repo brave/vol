@@ -289,7 +289,7 @@ def get_disk(volume_id, fail = True):
                 case None, _:
                     return None
                 case _:
-                    # If unformatted, returns the unformatted block device, otherwise returns the apfs device
+                    # If unformatted, returns the block device, otherwise returns the apfs device
                     if nvme_matching.get('volumes'):
                         containers = run2json(['diskutil', 'apfs', 'list', '-plist'])['Containers']
                         device = [c['Volumes'][0]['DeviceIdentifier'] for c in containers
