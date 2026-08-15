@@ -42,9 +42,8 @@ best performance and consistency (additional costs apply).
 
 ## Disclaimer
 
-When the `--mountpoint` option is used, volumes determined to be unformatted
-are formatted with no additional confirmation. There is a risk of data loss if
-that detection is (or ever becomes) inaccurate, especially on macOS.
+This script may wipe, or otherwise mishandle your volumes. Risks go up if
+`--mountpoint` is used. You have been warned.
 
 ## Goals and scope
 
