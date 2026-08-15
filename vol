@@ -282,14 +282,20 @@ def get_disk(volume_id, fail = True):
         case 'Darwin':
             nvme_all = json.loads(run(['system_profiler', '-json', 'SPNVMeDataType']).stdout)['SPNVMeDataType']
             nvme_items = sum((i['_items'] for i in nvme_all if i['_items']), [])
-            nvme_matching = [i for i in nvme_items if i['device_serial'] == volume_id.replace('-', '')][0]
-            if nvme_matching.get('volumes'):
-                containers = run2json(['diskutil', 'apfs', 'list', '-plist'])['Containers']
-                device_id = [c['Volumes'][0]['DeviceIdentifier'] for c in containers
-                    if c['PhysicalStores'][0]['DeviceIdentifier'] == nvme_matching['volumes'][0]['bsd_name']][0]
-                return f'/dev/{device_id}'
-            else:
-                return f'/dev/{nvme_matching['bsd_name']}'
+            nvme_matching = next((i for i in nvme_items if i['device_serial'] == volume_id.replace('-', '')), None)
+            match nvme_matching, fail:
+                case None, True:
+                    err(text = 'Could not find disk for volume {volume_id}')
+                case None, _:
+                    return None
+                case _:
+                    if nvme_matching.get('volumes'):
+                        containers = run2json(['diskutil', 'apfs', 'list', '-plist'])['Containers']
+                        device_id = [c['Volumes'][0]['DeviceIdentifier'] for c in containers
+                            if c['PhysicalStores'][0]['DeviceIdentifier'] == nvme_matching['volumes'][0]['bsd_name']][0]
+                        return f'/dev/{device_id}'
+                    else:
+                        return f'/dev/{nvme_matching['bsd_name']}'
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
