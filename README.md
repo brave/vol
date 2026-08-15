@@ -293,7 +293,7 @@ EOF
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
+Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS [a-zA-Z]+ /dev/disk[1-9][0-9]*$
 user ALL=(root) NOPASSWD: VOL_FORMAT
 EOF
 ```
@@ -302,7 +302,7 @@ EOF
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
+Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS [a-zA-Z]+ /dev/disk[1-9][0-9]*$
 Cmnd_Alias VOL_MOUNT = /usr/sbin/diskutil ^mount -mountPoint /mnt/point /dev/disk[1-9][0-9]*$
 Cmnd_Alias VOL_UMOUNT = /usr/sbin/diskutil ^umount /mnt/point$, /usr/sbin/diskutil ^umount /Volumes/vol-[0-9a-fA-F]+$
 user ALL=(root) NOPASSWD: VOL_FORMAT, VOL_MOUNT, VOL_UMOUNT
