@@ -280,15 +280,16 @@ def get_tag_dict(tags):
 def get_disk(volume_id, fail = True):
     match system():
         case 'Darwin':
-            nvme_info = json.loads(run(['system_profiler', '-json', 'SPNVMeDataType']).stdout)['SPNVMeDataType']
-            all_items = sum((i['_items'] for i in nvme_info if i['_items']), [])
-            volume_info = [i for i in all_items if i['device_serial'] == volume_id.replace('-', '')][0]
-            if volume_info.get('volumes'):
-                # FIXME: use diskutil apfs list to get the device, instead of relying on the name
-                volume_name = volume_info['volumes'][0]['_name']
-                return run2json(['diskutil', 'info', '-plist', volume_name])['DeviceNode']
+            nvme_all = json.loads(run(['system_profiler', '-json', 'SPNVMeDataType']).stdout)['SPNVMeDataType']
+            nvme_items = sum((i['_items'] for i in nvme_all if i['_items']), [])
+            nvme_matching = [i for i in nvme_items if i['device_serial'] == volume_id.replace('-', '')][0]
+            if nvme_matching.get('volumes'):
+                containers = run2json(['diskutil', 'apfs', 'list', '-plist'])['Containers']
+                device_id = [c['Volumes'][0]['DeviceIdentifier'] for c in containers
+                    if c['PhysicalStores'][0]['DeviceIdentifier'] == nvme_matching['volumes'][0]['bsd_name']][0]
+                return f'/dev/{device_id}'
             else:
-                return f'/dev/{volume_info['bsd_name']}'
+                return f'/dev/{nvme_matching['bsd_name']}'
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
