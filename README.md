@@ -40,6 +40,12 @@ Some observations that lead to the development of this tool:
 Note: in CI, it is recommended to use `--volume-initialization-rate 300` for
 best performance and consistency (additional costs apply).
 
+## Disclaimer
+
+When the `--mountpoint` option is used, volumes determined to be unformatted
+are formatted with no additional confirmation. There is a risk of data loss if
+that detection is (or ever becomes) inaccurate, especially on macOS.
+
 ## Goals and scope
 
 * Generic/flexible
@@ -53,12 +59,6 @@ best performance and consistency (additional costs apply).
 * Easy to deploy (one file + python3/boto3)
 * Runs unprivileged (sudo to format/(u)mount)
 * Under 1k lines
-
-## Disclaimer
-
-When the `--mountpoint` option is used, volumes determined to be unformatted
-are formatted with no additional confirmation. There is a risk of data loss if
-that detection is (or ever becomes) inaccurate, especially on macOS.
 
 ## Usage
 
