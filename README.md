@@ -42,7 +42,7 @@ best performance and consistency (additional costs apply).
 
 ## Disclaimer
 
-This script may wipe, or otherwise mishandle your volumes. Risks go up if
+This script may wipe, or otherwise mishandle volumes. Risks go up if
 `--mountpoint` is used.
 
 ## Goals and scope
