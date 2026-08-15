@@ -559,6 +559,7 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
     disk = wait_for_disk(volume_id)
     if not is_formatted(disk):
         format_volume(volume_id, fstype)
+        disk = get_disk(volume_id)
 
     makedirs(mountpoint, exist_ok=True)
     match system():
