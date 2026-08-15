@@ -565,6 +565,7 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
+            # TODO: only autoumount if it's under /Volumes, to handle the automounter
             existing_mountpoint = run2json(['diskutil', 'info', '-plist', disk])['MountPoint'].strip()
             if existing_mountpoint:
                 umount(existing_mountpoint)
