@@ -285,7 +285,7 @@ def get_disk(volume_id, fail = True):
             nvme_matching = next((i for i in nvme_items if i['device_serial'] == volume_id.replace('-', '')), None)
             match nvme_matching, fail:
                 case None, True:
-                    err(text = 'Could not find disk for volume {volume_id}')
+                    err(text = f'Could not find disk for volume {volume_id}')
                 case None, _:
                     return None
                 case _:
