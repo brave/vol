@@ -40,6 +40,11 @@ Some observations that lead to the development of this tool:
 Note: in CI, it is recommended to use `--volume-initialization-rate 300` for
 best performance and consistency (additional costs apply).
 
+## Disclaimer
+
+This script may wipe, or otherwise mishandle volumes. Risks go up if
+`--mountpoint` is used.
+
 ## Goals and scope
 
 * Generic/flexible
@@ -53,12 +58,6 @@ best performance and consistency (additional costs apply).
 * Easy to deploy (one file + python3/boto3)
 * Runs unprivileged (sudo to format/(u)mount)
 * Under 1k lines
-
-## Disclaimer
-
-When the `--mountpoint` option is used, volumes determined to be unformatted
-are formatted with no additional confirmation. There is a risk of data loss if
-that detection is (or ever becomes) inaccurate, especially on macOS.
 
 ## Usage
 
@@ -294,7 +293,7 @@ EOF
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
+Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS [a-zA-Z]+ /dev/disk[1-9][0-9]*$
 user ALL=(root) NOPASSWD: VOL_FORMAT
 EOF
 ```
@@ -303,9 +302,9 @@ EOF
 
 ```bash
 sudo install -Tm440 /dev/stdin /etc/sudoers.d/99-vol <<-'EOF'
-Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS vol-[0-9a-fA-F]+ /dev/disk[1-9][0-9]*$
-Cmnd_Alias VOL_MOUNT = /usr/sbin/diskutil ^mount -mountPoint /mnt/point vol-[0-9a-fA-F]+$
-Cmnd_Alias VOL_UMOUNT = /usr/sbin/diskutil ^umount /mnt/point$, /usr/sbin/diskutil ^umount /Volumes/vol-[0-9a-fA-F]+$
+Cmnd_Alias VOL_FORMAT = /usr/sbin/diskutil ^eraseDisk -noEFI APFS [a-zA-Z]+ /dev/disk[1-9][0-9]*$
+Cmnd_Alias VOL_MOUNT = /usr/sbin/diskutil ^mount -mountPoint /mnt/point /dev/disk[1-9][0-9]*$
+Cmnd_Alias VOL_UMOUNT = /usr/sbin/diskutil ^umount /mnt/point$, /usr/sbin/diskutil ^umount /Volumes/[a-zA-Z]+$
 user ALL=(root) NOPASSWD: VOL_FORMAT, VOL_MOUNT, VOL_UMOUNT
 EOF
 ```
