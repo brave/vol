@@ -566,7 +566,7 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
     match system():
         case 'Darwin':
             existing_mountpoint = run2json(['diskutil', 'info', '-plist', disk])['MountPoint'].strip()
-            if existing_mountpoint.startswith('/Volumes/'):
+            if existing_mountpoint.startswith('/Volumes/') and existing_mountpoint != mountpoint:
                 umount(existing_mountpoint, force=True)
             else:
                 err(text = f'{disk} ({volume_id}) is already mounted at ${existing_mountpoint}')
