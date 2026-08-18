@@ -565,25 +565,24 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
-            # TODO: only autoumount if it's under /Volumes, to handle the automounter
             existing_mountpoint = run2json(['diskutil', 'info', '-plist', disk])['MountPoint'].strip()
-            if existing_mountpoint:
-                umount(existing_mountpoint)
+            if existing_mountpoint and existing_mountpoint.startswith('/Volumes/') and existing_mountpoint != mountpoint:
+                umount(existing_mountpoint, force=True)
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
             if not ismount(mountpoint):
                 msg(f'Path {mountpoint} is not a mountpoint (likely automounted under /Volumes)')
-                sleep(2)
                 mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
-def umount(mountpoint):
+def umount(mountpoint, force = False):
     msg(f'Unmounting {mountpoint}')
     match system():
         case 'Darwin':
-            run(['diskutil', 'umount', mountpoint], sudo=not is_mac_admin())
+            maybe_force = ['force'] if force else []
+            run(['diskutil', 'umount'] + maybe_force + [mountpoint], sudo=not is_mac_admin())
         case _:
             run(['umount', mountpoint], sudo=True)
 
