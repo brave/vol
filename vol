@@ -296,7 +296,7 @@ def get_disk(volume_id, fail = True):
                             if c['PhysicalStores'][0]['DeviceIdentifier'] == nvme_matching['volumes'][0]['bsd_name']][0]
                         return f'/dev/{device}'
                     else:
-                        return f'/dev/{nvme_matching['bsd_name']}'
+                        return f'/dev/{nvme_matching["bsd_name"]}'
         case _:
             return f'/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{volume_id.replace("-", "")}'
 
