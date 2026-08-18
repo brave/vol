@@ -568,8 +568,6 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
             existing_mountpoint = run2json(['diskutil', 'info', '-plist', disk])['MountPoint'].strip()
             if existing_mountpoint and existing_mountpoint.startswith('/Volumes/') and existing_mountpoint != mountpoint:
                 umount(existing_mountpoint, force=True)
-            else:
-                err(text = f'{disk} ({volume_id}) is already mounted at {existing_mountpoint}')
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
             if not ismount(mountpoint):
