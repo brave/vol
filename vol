@@ -490,6 +490,7 @@ def attach_volume(volume, instance_id):
             return attach_volume(updated_volume, instance_id)
         case 'in-use/attached':
             if [a for a in volume['Attachments'] if a['InstanceId'] == instance_id]:
+                msg(f'{volume_desc} is already attached to {instance_id}')
                 return
 
     err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
