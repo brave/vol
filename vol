@@ -580,7 +580,9 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
                 mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
             mounted_disk = run(['findmnt', '-rno', 'SOURCE', mountpoint]).stdout
-            if realpath(mounted_disk) != realpath(mountpoint):
+            if realpath(mounted_disk) == realpath(mountpoint):
+                msg(f'Disk {disk} ({volume_id}) is already mounted at {mountpoint}')
+            else:
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
                 run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
