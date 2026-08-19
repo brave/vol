@@ -388,7 +388,7 @@ def update_timestamp(volume_id):
         Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
 def wait_for_disk(volume_id):
-    for i in range(10):
+    for _ in range(10):
         disk = get_disk(volume_id, fail=False)
         if disk and exists(disk):
             return disk
