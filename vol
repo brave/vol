@@ -388,17 +388,17 @@ def update_timestamp(volume_id):
         Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
 def wait_for_disk(volume_id):
-    for _ in range(10):
+    for _ in range(30):
         disk = get_disk(volume_id, fail=False)
         if disk and exists(disk):
             return disk
         else:
             dbg(f'Waiting for the disk to become available')
-            sleep(5)
+            sleep(2)
 
     err(text = f'Disk{" " + disk if disk else ""} for volume {volume_id} is not available')
 
-def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 600, step_sec = 10):
+def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 300, step_sec = 5):
     volume_state = get_volume_state(volume)
     valid_states_str = ', '.join(valid_states)
 
