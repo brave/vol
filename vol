@@ -565,7 +565,6 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
         disk = get_disk(volume_id)
 
     makedirs(mountpoint, exist_ok=True)
-
     match system():
         case 'Darwin':
             di = run2json(['diskutil', 'info', '-plist', disk])
