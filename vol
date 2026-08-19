@@ -18,7 +18,7 @@ from hashlib import sha256
 from operator import itemgetter
 from platform import system
 from os import getgid, getuid, makedirs
-from os.path import exists, ismount
+from os.path import exists, ismount, realpath
 from string import ascii_letters
 from textwrap import dedent
 from time import sleep
@@ -359,13 +359,11 @@ def valid_instance_id(instance_id):
     raise ValueError(f'Invalid instance id: {instance_id}')
 
 def get_instance_id():
+    dbg('Getting instance id')
     try:
-        dbg('Getting instance id from /var/lib/cloud/data/instance-id')
         with open('/var/lib/cloud/data/instance-id', 'r') as f:
             return valid_instance_id(f.read().strip())
     except Exception:
-        dbg('Failed to get instance id from /var/lib/cloud/data/instance-id')
-        dbg('Getting instance id from IMDS')
         imds='http://169.254.169.254/latest'
         read=lambda r: r.read(512).decode('utf-8')
 
@@ -490,8 +488,11 @@ def attach_volume(volume, instance_id):
             dbg(f'{volume_desc} is still in state {volume_state}, waiting...')
             updated_volume = wait_for_volume(volume, wait_states = ['creating', 'in-use/detaching', 'in-use/detached'])
             return attach_volume(updated_volume, instance_id)
-        case _:
-            err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
+        case 'in-use/attached':
+            if [a for a in volume['Attachments'] if a['InstanceId'] == instance_id]:
+                return
+
+    err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
 
 def detach_volume(volume):
     volume_desc = get_volume_desc(volume)
@@ -563,19 +564,24 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
         disk = get_disk(volume_id)
 
     makedirs(mountpoint, exist_ok=True)
+
     match system():
         case 'Darwin':
-            existing_mountpoint = run2json(['diskutil', 'info', '-plist', disk])['MountPoint'].strip()
-            if existing_mountpoint and existing_mountpoint.startswith('/Volumes/') and existing_mountpoint != mountpoint:
-                umount(existing_mountpoint, force=True)
+            di = run2json(['diskutil', 'info', '-plist', disk])
+            if realpath(di['MountPoint']) == realpath(mountpoint):
+                return
+            elif di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
+                umount(di['MountPoint'], force=True)
             msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
             run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
             if not ismount(mountpoint):
                 msg(f'Path {mountpoint} is not a mountpoint (likely automounted under /Volumes)')
                 mount(volume_id, mountpoint, fstype, retry - 1)
         case _:
-            msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
-            run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
+            mounted_disk = run(['findmnt', '-rno', 'SOURCE', mountpoint]).stdout
+            if realpath(mounted_disk) != realpath(mountpoint):
+                msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
+                run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
 def umount(mountpoint, force = False):
     msg(f'Unmounting {mountpoint}')
