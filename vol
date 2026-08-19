@@ -555,10 +555,7 @@ def format_volume(volume_id, fstype):
         case _:
             run(['mkfs', '-t', fstype, disk], sudo=True)
 
-def mount(volume_id, mountpoint, fstype, retry = 5):
-    if retry <= 0:
-        err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
-
+def mount(volume_id, mountpoint, fstype):
     disk = wait_for_disk(volume_id)
     if not is_formatted(disk):
         format_volume(volume_id, fstype)
@@ -567,16 +564,19 @@ def mount(volume_id, mountpoint, fstype, retry = 5):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
-            di = run2json(['diskutil', 'info', '-plist', disk])
-            if realpath(di['MountPoint']) == realpath(mountpoint):
-                return
-            elif di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
-                umount(di['MountPoint'], force=True)
-            msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
-            run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
-            if not ismount(mountpoint):
-                msg(f'Path {mountpoint} is not a mountpoint (likely automounted under /Volumes)')
-                mount(volume_id, mountpoint, fstype, retry - 1)
+            for _ in range(5):
+                di = run2json(['diskutil', 'info', '-plist', disk])
+                if realpath(di['MountPoint']) == realpath(mountpoint):
+                    return
+                elif di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
+                    umount(di['MountPoint'], force=True)
+                msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
+                run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
+                if ismount(mountpoint):
+                    return
+                else:
+                    msg(f'Path {mountpoint} is not a mountpoint (likely automounted under /Volumes)')
+            err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
         case _:
             mounted_disk = run(['findmnt', '-rno', 'SOURCE', mountpoint]).stdout
             if realpath(mounted_disk) == realpath(mountpoint):
