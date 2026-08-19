@@ -578,8 +578,8 @@ def mount(volume_id, mountpoint, fstype):
                     msg(f'Path {mountpoint} is not a mountpoint (likely automounted under /Volumes)')
             err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
         case _:
-            mounted_disk = run(['findmnt', '-rno', 'SOURCE', mountpoint]).stdout.strip()
-            if realpath(mounted_disk) == realpath(mountpoint):
+            findmnt = run(['findmnt', '-rno', 'SOURCE', mountpoint], check=False)
+            if findmnt.returncode == 0 and realpath(findmnt.stdout.strip()) == realpath(mountpoint):
                 msg(f'Disk {disk} ({volume_id}) is already mounted at {mountpoint}')
             else:
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
