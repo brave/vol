@@ -490,7 +490,7 @@ def attach_volume(volume, instance_id):
             return attach_volume(updated_volume, instance_id)
         case 'in-use/attached':
             if [a for a in volume['Attachments'] if a['InstanceId'] == instance_id]:
-                msg(f'{volume_desc} is already attached to {instance_id}')
+                msg(f'The {volume_desc} is already attached to {instance_id}')
                 return
 
     err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
@@ -505,7 +505,7 @@ def detach_volume(volume):
             update_timestamp(volume['VolumeId'])
             return ret
         case 'in-use/detaching' | 'in-use/detached':
-            dbg(f'{volume_desc} is already detaching, waiting...')
+            dbg(f'The {volume_desc} is already detaching, waiting...')
             wait_for_volume(volume, wait_states = ['in-use/detaching', 'in-use/detached'])
         case ('creating' | 'available' | 'deleting' | 'deleted') as state:
             dbg(f'{volume_desc} is in state {state}, nothing to do')
@@ -579,7 +579,7 @@ def mount(volume_id, mountpoint, fstype):
             err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
         case _:
             findmnt = run(['findmnt', '-rno', 'SOURCE', mountpoint], check=False)
-            if findmnt.returncode == 0 and realpath(findmnt.stdout.strip()) == realpath(mountpoint):
+            if findmnt.returncode == 0 and realpath(findmnt.stdout.strip()) == realpath(disk):
                 msg(f'Disk {disk} ({volume_id}) is already mounted at {mountpoint}')
             else:
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
