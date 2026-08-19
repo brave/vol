@@ -568,7 +568,7 @@ def mount(volume_id, mountpoint, fstype):
                 di = run2json(['diskutil', 'info', '-plist', disk])
                 if realpath(di['MountPoint']) == realpath(mountpoint):
                     return
-                elif di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
+                if di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
                     umount(di['MountPoint'], force=True)
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
                 run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
