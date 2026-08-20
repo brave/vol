@@ -3,7 +3,7 @@
 # Requires: python3, boto3
 # (u)mount/format require: sudo (+util-linux on linux)
 
-import argparse, json, random, re, subprocess, sys
+import argparse, boto3, json, random, re, subprocess, sys
 
 if sys.version_info < (3, 11):
     from datetime import timezone
@@ -11,7 +11,6 @@ if sys.version_info < (3, 11):
 else:
     from datetime import UTC
 
-from boto3 import client
 from datetime import date, datetime, MINYEAR
 from dateutil.parser import isoparse
 from hashlib import sha256
@@ -23,6 +22,8 @@ from string import ascii_letters
 from textwrap import dedent
 from time import sleep
 from urllib.request import Request, urlopen
+
+ec2 = boto3.client('ec2')
 
 PROG = 'vol'
 IMPLICIT_TAGS = {f'{PROG}.namespace': 'default'}
@@ -303,7 +304,7 @@ def get_disk(volume_id, fail = True):
 def get_device_name(volume, instance_id):
     valid_letters = [chr(c) for c in range(ord('b'), ord('z') + 1)]
     default_letter = valid_letters[sum(ord(c) for c in toList(volume['VolumeId'])) % len(valid_letters)]
-    instance = client('ec2').describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]
+    instance = ec2.describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]
     unavailable_letters = [m['DeviceName'][-1] for m in instance['BlockDeviceMappings']]
     available_letters = [letter for letter in valid_letters if letter not in unavailable_letters]
 
@@ -331,7 +332,7 @@ def get_volumes(tags, availability_zone = None, only_active = True):
     filters = get_tag_filters(tags) +\
         ([{'Name': 'availability-zone', 'Values': [availability_zone]}] if availability_zone else []) +\
         ([{'Name': 'status', 'Values': ['creating', 'available', 'in-use']}] if only_active else [])
-    return client('ec2').describe_volumes(Filters=filters)['Volumes'] if tags else []
+    return ec2.describe_volumes(Filters=filters)['Volumes'] if tags else []
 
 def get_volume(tags, availability_zone = None):
     match get_volumes(tags, availability_zone):
@@ -351,7 +352,7 @@ def get_volume_desc(volume):
 
 def get_snapshots(snapshot_tags):
     dbg(f'Getting snapshots with tags {get_tag_string(snapshot_tags)}')
-    return client('ec2').describe_snapshots(Filters=get_tag_filters(snapshot_tags))['Snapshots'] if snapshot_tags else []
+    return ec2.describe_snapshots(Filters=get_tag_filters(snapshot_tags))['Snapshots'] if snapshot_tags else []
 
 def valid_instance_id(instance_id):
     if re.fullmatch(r'i-[0-9a-f]{8,}', instance_id):
@@ -375,17 +376,15 @@ def get_instance_id():
 
 def get_instance_state(instance_id):
     dbg(f'Getting instance state for {instance_id}')
-    return client('ec2').describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['State']['Name']
+    return ec2.describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['State']['Name']
 
 def get_availability_zone(instance_id):
     dbg(f'Getting availability zone for instance {instance_id}')
-    return client('ec2').describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone']
+    return ec2.describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['Placement']['AvailabilityZone']
 
 def update_timestamp(volume_id):
     dbg(f'Updating the timestamp on volume {volume_id}')
-    return client('ec2').create_tags(
-        Resources=[volume_id],
-        Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
+    return ec2.create_tags(Resources=[volume_id], Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
 def wait_for_disk(volume_id):
     for _ in range(30):
@@ -467,7 +466,7 @@ def create_volume(tags, snapshot, availability_zone, size, kms_key_id, volume_in
       | ({'SnapshotId': snapshot['SnapshotId']} if snapshot else {}) \
       | ({'VolumeInitializationRate': volume_initialization_rate} if volume_initialization_rate and snapshot else {})
 
-    volume = client('ec2').create_volume(**options)
+    volume = ec2.create_volume(**options)
     update_timestamp(volume['VolumeId'])
 
     return volume
@@ -480,7 +479,7 @@ def attach_volume(volume, instance_id):
     match volume_state:
         case 'available':
             msg(f'Attaching {volume_desc} to instance {instance_id}')
-            return client('ec2').attach_volume(
+            return ec2.attach_volume(
                 VolumeId=volume['VolumeId'],
                 InstanceId=instance_id,
                 Device=get_device_name(volume, instance_id))
@@ -501,7 +500,7 @@ def detach_volume(volume):
     match get_volume_state(volume):
         case 'in-use/attached':
             msg(f'Detaching {volume_desc}')
-            ret = client('ec2').detach_volume(VolumeId=volume["VolumeId"])
+            ret = ec2.detach_volume(VolumeId=volume["VolumeId"])
             update_timestamp(volume['VolumeId'])
             return ret
         case 'in-use/detaching' | 'in-use/detached':
@@ -519,7 +518,7 @@ def delete_volume(volume):
     match volume_state:
         case 'available':
             msg(f'Deleting {volume_desc}')
-            return client('ec2').delete_volume(VolumeId=volume["VolumeId"])
+            return ec2.delete_volume(VolumeId=volume["VolumeId"])
         case 'deleted' | 'deleting':
             dbg(f'{volume_desc} is {volume_state}')
         case 'in-use/detaching':
@@ -537,13 +536,13 @@ def create_snapshot(volume, snapshot_tags):
 
     msg(f'Creating a snapshot with tags {get_tag_string(snapshot_tags)} from ' + get_volume_desc(volume))
 
-    return client('ec2').create_snapshot(
+    return ec2.create_snapshot(
         TagSpecifications=[{'ResourceType': 'snapshot', 'Tags': get_tag_spec(snapshot_tags)}],
         VolumeId=volume['VolumeId'])
 
 def delete_snapshot(snapshot):
     msg(f'Deleting snapshot {snapshot["SnapshotId"]} with tags {get_tag_string(snapshot["Tags"])}')
-    return client('ec2').delete_snapshot(SnapshotId=snapshot['SnapshotId'])
+    return ec2.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
 
 def format_volume(volume_id, fstype):
     disk = get_disk(volume_id)
