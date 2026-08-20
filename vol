@@ -384,9 +384,7 @@ def get_availability_zone(instance_id):
 
 def update_timestamp(volume_id):
     dbg(f'Updating the timestamp on volume {volume_id}')
-    return ec2.create_tags(
-        Resources=[volume_id],
-        Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
+    return ec2.create_tags(Resources=[volume_id], Tags=[{'Key': f'{PROG}.updated', 'Value': datetime.now(UTC).isoformat()}])
 
 def wait_for_disk(volume_id):
     for _ in range(30):
