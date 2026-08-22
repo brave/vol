@@ -397,7 +397,7 @@ def wait_for_disk(volume_id):
 
     err(text = f'Disk{" " + disk if disk else ""} for volume {volume_id} is not available')
 
-def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 300, step_sec = 5):
+def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 300, step_sec = 10):
     volume_state = get_volume_state(volume)
     valid_states_str = ', '.join(valid_states)
 
@@ -567,6 +567,7 @@ def mount(volume_id, mountpoint, fstype):
                 di = run2json(['diskutil', 'info', '-plist', disk])
                 if realpath(di['MountPoint']) == realpath(mountpoint):
                     return
+                # Countering the automounter
                 if di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
                     umount(di['MountPoint'], force=True)
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
