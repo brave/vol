@@ -613,7 +613,9 @@ def list(tags, snapshot_tags, availability_zone):
                 'availability-zone': v['AvailabilityZone'],
                 'tags': get_tag_string(v['Tags']),
                 'updated': get_tag_dict(v['Tags']).get(f'{PROG}.updated', v['CreateTime'])
-            } | ({'snapshot-id': v['SnapshotId']} if v['SnapshotId'] else {}) for v in get_volumes(tags, availability_zone, only_active=False)
+            } | ({'snapshot-id': v['SnapshotId']} if v['SnapshotId'] else {}) \
+              | ({'instance-id': v['Attachments'][0]['InstanceId']} if v['Attachments'] else {}) \
+            for v in get_volumes(tags, availability_zone, only_active=False)
         }
     } if tags else {}
 
