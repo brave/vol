@@ -596,7 +596,7 @@ def umount(mountpoint, force = False):
             case _:
                 run(['umount', mountpoint], sudo=True)
     else:
-        msg(f'Path {mountpoint} is not a mountpoint')
+        msg(f'Path {mountpoint} is not a mountpoint, nothing to do')
 
 def instance_and_az_match(instance_id, availability_zone):
     if instance_id and availability_zone:
