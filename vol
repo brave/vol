@@ -194,7 +194,7 @@ toList = list
 def run(cmd, **kw):
     try:
         command = ['sudo'] + cmd if kw.get('sudo') else cmd
-        options = {'capture_output': True, 'text': True, 'check': True} | {k:kw[k] for k in kw if k != 'sudo'}
+        options = {'capture_output': True, 'text': True, 'check': True} | {k: kw[k] for k in kw if k != 'sudo'}
         return subprocess.run(command, **options)
     except subprocess.CalledProcessError as e:
         err(text = f'Command {cmd} failed with exit status {e.returncode}:\n{e.stderr}')
@@ -402,6 +402,7 @@ def wait_for_volume(volume, valid_states = ['available'], wait_states = [], time
     valid_states_str = ', '.join(valid_states)
 
     if volume_state in valid_states:
+        dbg(f'{get_volume_desc(volume).capitalize()} reached valid state {volume_state}')
         return volume
     elif volume_state in wait_states:
         if timeout_sec <= 0:
@@ -587,12 +588,15 @@ def mount(volume_id, mountpoint, fstype):
 
 def umount(mountpoint, force = False):
     msg(f'Unmounting {mountpoint}')
-    match system():
-        case 'Darwin':
-            maybe_force = ['force'] if force else []
-            run(['diskutil', 'umount'] + maybe_force + [mountpoint], sudo=not is_mac_admin())
-        case _:
-            run(['umount', mountpoint], sudo=True)
+    if ismount(mountpoint):
+        match system():
+            case 'Darwin':
+                maybe_force = ['force'] if force else []
+                run(['diskutil', 'umount'] + maybe_force + [mountpoint], sudo=not is_mac_admin())
+            case _:
+                run(['umount', mountpoint], sudo=True)
+    else:
+        msg(f'Path {mountpoint} is not a mountpoint, nothing to do')
 
 def instance_and_az_match(instance_id, availability_zone):
     if instance_id and availability_zone:
