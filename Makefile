@@ -36,7 +36,7 @@ mypy-venv: requirements.txt $(MAKEFILE_LIST)
 
 mypy: mypy-venv
 	source mypy-venv/bin/activate
-	mypy vol.py
+	mypy vol
 
 # Run hadolint
 
