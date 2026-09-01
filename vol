@@ -402,7 +402,7 @@ def wait_for_volume(volume, valid_states = ['available'], wait_states = [], time
     valid_states_str = ', '.join(valid_states)
 
     if volume_state in valid_states:
-        dbg(f'{get_volume_desc(volume).capitalize()} reached valid state ${volume_state}')
+        dbg(f'{get_volume_desc(volume).capitalize()} reached valid state {volume_state}')
         return volume
     elif volume_state in wait_states:
         if timeout_sec <= 0:
