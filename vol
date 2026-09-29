@@ -375,7 +375,6 @@ def get_instance_id():
                 return valid_instance_id(read(resp2))
 
 def get_instance_state(instance_id):
-    dbg(f'Getting instance state for {instance_id}')
     return ec2.describe_instances(InstanceIds=[instance_id])['Reservations'][0]['Instances'][0]['State']['Name']
 
 def get_availability_zone(instance_id):
@@ -397,12 +396,13 @@ def wait_for_disk(volume_id):
 
     err(text = f'Disk{" " + disk if disk else ""} for volume {volume_id} is not available')
 
+# TODO: use ec2.get_waiter
 def wait_for_volume(volume, valid_states = ['available'], wait_states = [], timeout_sec = 300, step_sec = 10):
     volume_state = get_volume_state(volume)
     valid_states_str = ', '.join(valid_states)
 
     if volume_state in valid_states:
-        dbg(f'{get_volume_desc(volume).capitalize()} reached valid state {volume_state}')
+        dbg(f'{get_volume_desc(volume)} reached valid state {volume_state}')
         return volume
     elif volume_state in wait_states:
         if timeout_sec <= 0:
@@ -415,6 +415,7 @@ def wait_for_volume(volume, valid_states = ['available'], wait_states = [], time
     else:
         err(text = f'Volume {volume["VolumeId"]} is in an invalid state {volume_state}')
 
+# TODO: use ec2.get_waiter
 def wait_for_instance(instance_id, timeout_sec = 600):
     match get_instance_state(instance_id):
         case 'running' | 'stopped':
@@ -490,7 +491,7 @@ def attach_volume(volume, instance_id):
             return attach_volume(updated_volume, instance_id)
         case 'in-use/attached':
             if [a for a in volume['Attachments'] if a['InstanceId'] == instance_id]:
-                msg(f'{volume_desc.capitalize()} is already attached to {instance_id}')
+                msg(f'{volume_desc} is already attached to {instance_id}')
                 return
 
     err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
@@ -505,7 +506,7 @@ def detach_volume(volume):
             update_timestamp(volume['VolumeId'])
             return ret
         case 'in-use/detaching' | 'in-use/detached':
-            dbg(f'{volume_desc.capitalize()} is already detaching, waiting...')
+            dbg(f'{volume_desc} is already detaching, waiting...')
             wait_for_volume(volume, wait_states = ['in-use/detaching', 'in-use/detached'])
         case ('creating' | 'available' | 'deleting' | 'deleted') as state:
             dbg(f'{volume_desc} is in state {state}, nothing to do')
@@ -605,7 +606,6 @@ def instance_and_az_match(instance_id, availability_zone):
 
 ################################### ACTIONS ###################################
 
-# TODO: show also the instance id when the volume is mounted
 def list(tags, snapshot_tags, availability_zone):
     if not tags and not snapshot_tags:
         err('NO_TAGS_SPECIFIED')
@@ -625,8 +625,7 @@ def list(tags, snapshot_tags, availability_zone):
 
     snapshots_result = {
         'snapshots': {
-            s['SnapshotId']: {
-                'state': s['State'],
+            s['SnapshotId']: {'state': s['State']} | ({'progress': s['Progress']} if s['State'] == 'pending' else {}) | {
                 'volume-id': s['VolumeId'],
                 'tags': get_tag_string(s['Tags']),
                 'created': s['StartTime'],
@@ -746,7 +745,7 @@ def main():
             availability_zone = args.availability_zone or get_availability_zone(instance_id)
             instance_and_az_match(instance_id, availability_zone)
 
-            extra_args = { 'instance_id': instance_id, 'availability_zone': availability_zone }
+            extra_args = {'instance_id': instance_id, 'availability_zone': availability_zone}
             arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint',
                          'fstype', 'no_snapshots', 'volume_initialization_rate']
 
