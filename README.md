@@ -128,8 +128,8 @@ options:
 ```console
 % vol attach -h
 usage: vol attach [-h] [-f FSTYPE] [-i INSTANCE_ID] [-k KMS_KEY_ID] [-m MOUNTPOINT] [-n NO_SNAPSHOTS]
-                  [-r VOLUME_INITIALIZATION_RATE] -s SIZE -t TAGS [-T SNAPSHOT_TAGS] [-w WIPE]
-                  [-z AVAILABILITY_ZONE]
+                  [-o IOPS] [-p THROUGHPUT] [-r VOLUME_INITIALIZATION_RATE] -s SIZE -t TAGS
+                  [-T SNAPSHOT_TAGS] [-v VOLUME_TYPE] [-w WIPE] [-z AVAILABILITY_ZONE]
 
 * if wipe is specified, delete the volume with the specified tags in the specified availability zone
 * find any volume with the specified tags and availability zone and any snapshots with the specified tags
@@ -171,12 +171,17 @@ options:
                         (default: None)
   -n, --no-snapshots NO_SNAPSHOTS
                         do not use snapshots to create volumes (default: False)
+  -o, --iops IOPS       provisioned iops (default: None)
+  -p, --throughput THROUGHPUT
+                        provisioned throughput (default: None)
   -r, --volume-initialization-rate VOLUME_INITIALIZATION_RATE
                         volume initialization rate in MiB/s (default: None)
   -s, --size SIZE       volume size in GB, if it needs to be created
   -t, --tags TAGS       match volume tags: t1=v1,...,tN=vN
   -T, --snapshot-tags SNAPSHOT_TAGS
                         match snapshot tags: t1=v1,...,tN=vN (default: None)
+  -v, --volume-type VOLUME_TYPE
+                        volume type (default: gp3)
   -w, --wipe WIPE       delete the matching volume first (default: False)
   -z, --availability-zone AVAILABILITY_ZONE
                         availability zone, derived from instance-id if not set (default: None)
