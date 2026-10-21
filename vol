@@ -192,12 +192,19 @@ def get_args():
 toList = list
 
 def run(cmd, **kw):
+    check = kw.get('check', True)
     try:
         command = ['sudo'] + cmd if kw.get('sudo') else cmd
         options = {'capture_output': True, 'text': True, 'check': True} | {k: kw[k] for k in kw if k != 'sudo'}
         return subprocess.run(command, **options)
     except subprocess.CalledProcessError as e:
+        if not check:
+            return e
         err(text = f'Command {cmd} failed with exit status {e.returncode}:\n{e.stderr}')
+    except subprocess.TimeoutExpired as e:
+        if not check:
+            return subprocess.CompletedProcess(command, 124, stdout=e.stdout or '', stderr=e.stderr or 'Timed out')
+        err(text = f'Command {cmd} timed out:\n{e.stderr or ""}')
 
 def run2json(cmd):
     return json.loads(run(['plutil', '-convert', 'json', '-o', '-', '-'], input=run(cmd).stdout).stdout)
@@ -565,19 +572,24 @@ def mount(volume_id, mountpoint, fstype):
     makedirs(mountpoint, exist_ok=True)
     match system():
         case 'Darwin':
+            # Disk Arbitration mounts a new volume at /Volumes/<name> and can remount it
+            # there between an unmount and diskutil mount. Retry a failed mount; run()
+            # would otherwise exit. nobrowse keeps Finder from browsing the mount.
             for _ in range(5):
                 di = run2json(['diskutil', 'info', '-plist', disk])
-                if realpath(di['MountPoint']) == realpath(mountpoint):
+                current = di.get('MountPoint') or ''
+                if current and realpath(current) == realpath(mountpoint):
                     return
-                # Countering the automounter
-                if di['MountPoint'] == f'/Volumes/{di["VolumeName"]}':
-                    umount(di['MountPoint'], force=True)
+                if current.startswith('/Volumes/'):
+                    umount(current, force=True, check=False, timeout=30)
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
-                run(['diskutil', 'mount', '-mountPoint', mountpoint, disk], sudo=not is_mac_admin())
-                if ismount(mountpoint):
+                mounted = run(['diskutil', 'mount', 'nobrowse', '-mountPoint', mountpoint, disk],
+                    sudo=not is_mac_admin(), check=False, timeout=30)
+                if mounted.returncode == 0 and ismount(mountpoint):
                     return
-                else:
-                    msg(f'Path {mountpoint} is not a mountpoint (likely automounted under /Volumes)')
+                detail = (mounted.stderr or mounted.stdout or '').strip()
+                msg(f'Failed to mount {disk} ({volume_id}) at {mountpoint}' + (f': {detail}' if detail else ''))
+                sleep(2)
             err(text = f'Failed to mount volume {volume_id} at {mountpoint}')
         case _:
             findmnt = run(['findmnt', '-rno', 'SOURCE', mountpoint], check=False)
@@ -587,15 +599,19 @@ def mount(volume_id, mountpoint, fstype):
                 msg(f'Mounting {disk} ({volume_id}) at {mountpoint}')
                 run(['mount', '-t', fstype, '-o', 'noatime', disk, mountpoint], sudo=True)
 
-def umount(mountpoint, force = False):
+def umount(mountpoint, force = False, check = True, timeout = None):
     msg(f'Unmounting {mountpoint}')
     if ismount(mountpoint):
         match system():
             case 'Darwin':
                 maybe_force = ['force'] if force else []
-                run(['diskutil', 'umount'] + maybe_force + [mountpoint], sudo=not is_mac_admin())
+                result = run(['diskutil', 'umount'] + maybe_force + [mountpoint],
+                    sudo=not is_mac_admin(), check=check, timeout=timeout)
             case _:
-                run(['umount', mountpoint], sudo=True)
+                result = run(['umount', mountpoint], sudo=True, check=check, timeout=timeout)
+        if not check and result.returncode != 0:
+            msg(f'Unmount of {mountpoint} failed ({result.returncode}): {(result.stderr or "").strip()}')
+        return result
     else:
         msg(f'Path {mountpoint} is not a mountpoint, nothing to do')
 
