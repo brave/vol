@@ -573,8 +573,8 @@ def mount(volume_id, mountpoint, fstype):
     match system():
         case 'Darwin':
             # Disk Arbitration mounts a new volume at /Volumes/<name> and can remount it
-            # there between an unmount and diskutil mount. A failed mount must be retried;
-            # run() would otherwise exit. nobrowse matches Jenkins start-mount.
+            # there between an unmount and diskutil mount. Retry a failed mount; run()
+            # would otherwise exit. nobrowse keeps Finder from browsing the mount.
             for _ in range(5):
                 di = run2json(['diskutil', 'info', '-plist', disk])
                 current = di.get('MountPoint') or ''
