@@ -500,9 +500,6 @@ def attach_volume(volume, instance_id):
             if [a for a in volume['Attachments'] if a['InstanceId'] == instance_id]:
                 msg(f'{volume_desc} is already attached to {instance_id}')
                 return
-            other_instance_id = volume['Attachments'][0]['InstanceId']
-            msg(f'{volume_desc} is attached to instance {other_instance_id}, detaching')
-            return attach_volume(detach_and_wait(volume), instance_id)
 
     err(text = f'{volume_desc} is in state {volume_state} and can\'t be attached')
 
@@ -523,10 +520,6 @@ def detach_volume(volume):
         case volume_state:
             err(text = f'{volume_desc} is in state {volume_state} and can\'t be detached')
 
-def detach_and_wait(volume):
-    detach_volume(volume)
-    return wait_for_volume(volume, wait_states = ['in-use/attached', 'in-use/detaching', 'in-use/detached'])
-
 def delete_volume(volume):
     volume_desc = get_volume_desc(volume)
     volume_state = get_volume_state(volume)
@@ -537,12 +530,9 @@ def delete_volume(volume):
             return ec2.delete_volume(VolumeId=volume["VolumeId"])
         case 'deleted' | 'deleting':
             dbg(f'{volume_desc} is {volume_state}')
-        case 'in-use/attached':
-            msg(f'{volume_desc} is attached, detaching before delete')
-            return delete_volume(detach_and_wait(volume))
-        case 'in-use/detaching' | 'in-use/detached':
+        case 'in-use/detaching':
             dbg(f'{volume_desc} is detaching, waiting...')
-            updated_volume = wait_for_volume(volume, wait_states = ['in-use/detaching', 'in-use/detached'])
+            updated_volume = wait_for_volume(volume, wait_states = [volume_state])
             return delete_volume(updated_volume)
         case _:
             err(text = f'{volume_desc} is in state {volume_state} and can\'t be deleted')
