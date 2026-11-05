@@ -104,10 +104,13 @@ def get_args():
                 (['-k', '--kms-key-id'], {'help': 'KMS key to use for volume encryption, otherwise default'}),
                 (['-m', '--mountpoint'], {'help': 'mountpoint, only on <instance-id>, requires util-linux, create if doesn\'t exist'}),
                 (['-n', '--no-snapshots'], {'type': bool, 'default': False, 'help': 'do not use snapshots to create volumes'}),
+                (['-o', '--iops'], {'type': int, 'default': None, 'help': 'provisioned iops'}),
+                (['-p', '--throughput'], {'type': int, 'default': None, 'help': 'provisioned throughput'}),
                 (['-r', '--volume-initialization-rate'], {'type': int, 'default': None, 'help': 'volume initialization rate in MiB/s'}),
                 (['-s', '--size'], {'type': int, 'required': True, 'help': 'volume size in GB, if it needs to be created'}),
                 (['-t', '--tags'], {'type': tag_type, 'required': True, 'help': 'match volume tags: t1=v1,...,tN=vN'}),
                 (['-T', '--snapshot-tags'], {'type': tag_type, 'help': 'match snapshot tags: t1=v1,...,tN=vN'}),
+                (['-v', '--volume-type'], {'default': 'gp3', 'help': 'volume type'}),
                 (['-w', '--wipe'], {'type': bool, 'default': False, 'help': 'delete the matching volume first'}),
                 (['-z', '--availability-zone'], {'help': 'availability zone, derived from instance-id if not set'}),
             ),
@@ -451,7 +454,7 @@ def print_result(result):
 
 ############################# HIGH-LEVEL HELPERS ##############################
 
-def create_volume(tags, snapshot, availability_zone, size, kms_key_id, volume_initialization_rate):
+def create_volume(tags, snapshot, availability_zone, size, kms_key_id, volume_initialization_rate, volume_type, iops, throughput):
     if get_volumes(tags, availability_zone) != []:
         err('TOO_MANY_VOLUMES')
 
@@ -463,9 +466,11 @@ def create_volume(tags, snapshot, availability_zone, size, kms_key_id, volume_in
         'Encrypted': True,
         'Size': size,
         'TagSpecifications': [{'ResourceType': 'volume', 'Tags': get_tag_spec(tags)}],
-        'VolumeType': 'gp3',
-    } | ({'KmsKeyId': kms_key_id} if kms_key_id else {}) \
+        'VolumeType': volume_type,
+    } | ({'Iops': iops} if iops else {}) \
+      | ({'KmsKeyId': kms_key_id} if kms_key_id else {}) \
       | ({'SnapshotId': snapshot['SnapshotId']} if snapshot else {}) \
+      | ({'Throughput': throughput} if throughput else {}) \
       | ({'VolumeInitializationRate': volume_initialization_rate} if volume_initialization_rate and snapshot else {})
 
     volume = ec2.create_volume(**options)
@@ -635,8 +640,8 @@ def list(tags, snapshot_tags, availability_zone):
 
     return volumes_result | snapshots_result
 
-def attach(tags, snapshot_tags, instance_id, availability_zone, wipe, size, kms_key_id,
-           mountpoint, fstype, no_snapshots, volume_initialization_rate):
+def attach(tags, snapshot_tags, instance_id, availability_zone, wipe, size, kms_key_id, mountpoint,
+    fstype, no_snapshots, volume_initialization_rate, volume_type, iops, throughput):
     if wipe:
         match get_volumes(tags, availability_zone):
             case [vol]:
@@ -644,11 +649,14 @@ def attach(tags, snapshot_tags, instance_id, availability_zone, wipe, size, kms_
 
     options = {
         'availability_zone': availability_zone,
+        'iops': iops,
         'kms_key_id': kms_key_id,
         'size': size,
-        'tags' : tags,
         'snapshot': None,
+        'tags' : tags,
+        'throughput': throughput,
         'volume_initialization_rate': volume_initialization_rate,
+        'volume_type': volume_type,
     }
 
     match get_volumes(tags, availability_zone), get_snapshots(tags), (get_snapshots(snapshot_tags) if snapshot_tags else []):
@@ -746,8 +754,8 @@ def main():
             instance_and_az_match(instance_id, availability_zone)
 
             extra_args = {'instance_id': instance_id, 'availability_zone': availability_zone}
-            arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint',
-                         'fstype', 'no_snapshots', 'volume_initialization_rate']
+            arg_names = ['tags', 'snapshot_tags', 'wipe', 'size', 'kms_key_id', 'mountpoint', 'fstype',
+                'no_snapshots', 'volume_initialization_rate', 'volume_type', 'iops', 'throughput']
 
             print_result(attach(**{k: getattr(args, k) for k in arg_names} | extra_args))
         case 'detach':
