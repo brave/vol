@@ -4,14 +4,7 @@
 # (u)mount/format require: sudo (+util-linux on linux)
 
 import argparse, boto3, json, random, re, subprocess, sys
-
-if sys.version_info < (3, 11):
-    from datetime import timezone
-    UTC = timezone.utc
-else:
-    from datetime import UTC
-
-from datetime import date, datetime, MINYEAR
+from datetime import date, datetime, MINYEAR, UTC
 from dateutil.parser import isoparse
 from hashlib import sha256
 from operator import itemgetter
